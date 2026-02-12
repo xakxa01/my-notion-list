@@ -66,8 +66,8 @@ Set these environment variables in your deployment:
 
 - `NOTION_CLIENT_ID`
 - `NOTION_CLIENT_SECRET`
-- `CHROME_EXTENSION_IDS` (recommended, comma-separated)
-- `NOTION_ALLOWED_REDIRECT_URIS` (optional, comma-separated)
+- `CHROME_EXTENSION_IDS` (comma-separated extension IDs) or `NOTION_ALLOWED_REDIRECT_URIS` (comma-separated exact redirect URIs)
+  - At least one allowlist source is required.
 
 Example endpoint:
 
@@ -83,5 +83,4 @@ Example endpoint:
 - `contextMenus`: context menu actions for selected text.
 - `storage`: token, ordering, and settings.
 - `identity`: OAuth flow.
-- `notifications`: save status notifications.
 - Host permissions for Notion API and OAuth proxy.

@@ -229,13 +229,14 @@ export function usePopupController() {
 
   const sortedTemplates = useMemo(() => {
     if (!currentDataSource) return []
+
+    const orderIndex = new Map(templatesOrder.map((id, index) => [id, index]))
     return [...currentDataSource.templates].sort((a, b) => {
-      const indexA = templatesOrder.indexOf(a.id)
-      const indexB = templatesOrder.indexOf(b.id)
-      if (indexA === -1 && indexB === -1) return 0
-      if (indexA === -1) return 1
-      if (indexB === -1) return -1
-      return indexA - indexB
+      const indexA = orderIndex.get(a.id)
+      const indexB = orderIndex.get(b.id)
+      const rankA = typeof indexA === 'number' ? indexA : Number.MAX_SAFE_INTEGER
+      const rankB = typeof indexB === 'number' ? indexB : Number.MAX_SAFE_INTEGER
+      return rankA - rankB
     })
   }, [currentDataSource, templatesOrder])
 

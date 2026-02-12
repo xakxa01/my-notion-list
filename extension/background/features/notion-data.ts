@@ -515,13 +515,12 @@ export function sortTemplatesByOrder(
     return templates
   }
 
+  const orderIndex = new Map(order.map((id, index) => [id, index]))
   return [...templates].sort((a, b) => {
-    const indexA = order.indexOf(a.id)
-    const indexB = order.indexOf(b.id)
-
-    if (indexA === -1 && indexB === -1) return 0
-    if (indexA === -1) return 1
-    if (indexB === -1) return -1
-    return indexA - indexB
+    const indexA = orderIndex.get(a.id)
+    const indexB = orderIndex.get(b.id)
+    const rankA = typeof indexA === 'number' ? indexA : Number.MAX_SAFE_INTEGER
+    const rankB = typeof indexB === 'number' ? indexB : Number.MAX_SAFE_INTEGER
+    return rankA - rankB
   })
 }

@@ -1,5 +1,8 @@
 :root {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 14px;
   color: #1a1a1a;
   background: #fff;
@@ -73,8 +76,8 @@ a:hover {
   text-decoration: underline;
 }
 
-input[type="password"],
-input[type="text"] {
+input[type='password'],
+input[type='text'] {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #ddd;
@@ -176,8 +179,8 @@ input[type="text"] {
 }
 
 .icon-action-btn {
-  width: 32px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -199,7 +202,7 @@ input[type="text"] {
 }
 
 .controls-row .compact-btn {
-  height: 36px;
+  height: 40px;
   box-sizing: border-box;
 }
 
@@ -216,9 +219,9 @@ input[type="text"] {
 }
 
 .sync-icon-btn {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -257,9 +260,9 @@ input[type="text"] {
 }
 
 .compact-icon-btn {
-  width: 32px;
-  min-width: 32px;
-  height: 36px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
   padding: 0;
   display: inline-flex;
   align-items: center;
