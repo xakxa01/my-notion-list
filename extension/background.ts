@@ -1010,18 +1010,6 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
       })
     return true
   }
-  if (msg.type === 'OAUTH_CODE' && msg.code) {
-    exchangeOAuthCode(msg.code)
-      .then(() => sendResponse({ ok: true }))
-      .catch((err) => {
-        const raw = err instanceof Error ? err.message : String(err)
-        const errorMessage = /cancelado|canceled|blocked|bloqueado/i.test(raw)
-          ? 'Sign-in canceled.'
-          : 'Could not complete OAuth connection.'
-        sendResponse({ ok: false, error: errorMessage })
-      })
-    return true
-  }
   if (msg.type === 'REFRESH_MENU') {
     refreshContextMenu().then(() => sendResponse({ ok: true }))
     return true
