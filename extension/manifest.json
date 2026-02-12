@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Guardar en Notion",
+  "name": "My Notion List",
   "version": "1.0.0",
-  "description": "Guarda texto seleccionado como nueva página en tus bases de datos de Notion con template opcional.",
+  "description": "Save selected text as a new page in your Notion data sources with optional templates.",
   "permissions": [
     "contextMenus",
     "storage",
@@ -20,8 +20,8 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Guardar en Notion",
-    "default_icons": {
+    "default_title": "My Notion List",
+    "default_icon": {
       "16": "icon-16.svg",
       "32": "icon-32.svg",
       "48": "icon-48.svg"
