@@ -20,6 +20,7 @@ const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
 
 type DbOption = { id: string; name: string }
+type AuthMethod = 'token' | 'oauth' | ''
 
 export default function Options() {
   const [databases, setDatabases] = useState<DbOption[]>([])
@@ -29,6 +30,7 @@ export default function Options() {
   const [savingAccess, setSavingAccess] = useState(false)
   const [reconnectLoading, setReconnectLoading] = useState(false)
   const [reconnectMessage, setReconnectMessage] = useState<string | null>(null)
+  const [authMethod, setAuthMethod] = useState<AuthMethod>('')
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
@@ -58,13 +60,23 @@ export default function Options() {
       const redirectUri = (r as { redirectUri?: string })?.redirectUri || ''
       setOauthRedirectUri(redirectUri)
     })
+    chrome.runtime.sendMessage({ type: 'GET_AUTH_METHOD' }, (r: unknown) => {
+      const method = String((r as { method?: string })?.method || '')
+      setAuthMethod(method === 'token' || method === 'oauth' ? (method as AuthMethod) : '')
+    })
     loadDataSources()
 
     const handleStorageChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
-      if (areaName !== 'local' || !changes['notion_token']) return
-      const nextValue = changes['notion_token'].newValue
-      if (!nextValue) {
-        window.close()
+      if (areaName !== 'local') return
+      if (changes['notion_token']) {
+        const nextValue = changes['notion_token'].newValue
+        if (!nextValue) {
+          window.close()
+        }
+      }
+      if (changes['notion_auth_method']) {
+        const nextMethod = String(changes['notion_auth_method'].newValue || '')
+        setAuthMethod(nextMethod === 'token' || nextMethod === 'oauth' ? (nextMethod as AuthMethod) : '')
       }
     }
     chrome.storage.onChanged?.addListener(handleStorageChanged)
@@ -132,7 +144,8 @@ export default function Options() {
               type="button"
               className="refresh-btn"
               onClick={handleReconnectNotionAccess}
-              disabled={loadingDbs || savingAccess || reconnectLoading}
+              disabled={loadingDbs || savingAccess || reconnectLoading || authMethod === 'token'}
+              title={authMethod === 'token' ? 'Available only when signed in with Notion OAuth.' : undefined}
             >
               {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
             </button>

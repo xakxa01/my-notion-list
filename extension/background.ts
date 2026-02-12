@@ -25,6 +25,7 @@ const DATA_SOURCE_ORDER_KEY = 'notion_data_source_order'
 const ACTIVE_DATA_SOURCE_IDS_KEY = 'notion_active_data_source_ids'
 const TEMPLATE_ORDER_KEY = 'notion_template_order'
 const DATA_SOURCES_LIST_CACHE_KEY = 'notion_data_sources_list_cache'
+const AUTH_METHOD_KEY = 'notion_auth_method'
 const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
@@ -61,6 +62,21 @@ function getToken(): Promise<string | null> {
 function setToken(token: string | null): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.local.set({ notion_token: token ?? '', [DATA_SOURCES_LIST_CACHE_KEY]: '' }, resolve)
+  })
+}
+
+function getAuthMethod(): Promise<'token' | 'oauth' | ''> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([AUTH_METHOD_KEY], (r) => {
+      const value = String((r as Record<string, unknown>)[AUTH_METHOD_KEY] || '')
+      resolve(value === 'token' || value === 'oauth' ? value : '')
+    })
+  })
+}
+
+function setAuthMethod(method: 'token' | 'oauth' | ''): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [AUTH_METHOD_KEY]: method }, () => resolve())
   })
 }
 
@@ -263,6 +279,7 @@ async function exchangeOAuthCode(code: string): Promise<void> {
   if (!res.ok) throw new Error(data.error || 'OAuth exchange failed.')
   if (!data.access_token) throw new Error('OAuth proxy did not return access_token.')
   await setToken(data.access_token)
+  await setAuthMethod('oauth')
   await refreshContextMenu()
 }
 
@@ -965,7 +982,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?: string }, _sender, sendResponse) => {
   if (msg.type === 'SET_TOKEN' && msg.token !== undefined) {
-    setToken(msg.token || null).then(() => {
+    const nextToken = msg.token || null
+    Promise.all([setToken(nextToken), setAuthMethod(nextToken ? 'token' : '')]).then(() => {
       refreshContextMenu()
       sendResponse({ ok: true })
     })
@@ -973,6 +991,10 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
   }
   if (msg.type === 'GET_TOKEN') {
     getToken().then((t) => sendResponse({ token: t }))
+    return true
+  }
+  if (msg.type === 'GET_AUTH_METHOD') {
+    getAuthMethod().then((method) => sendResponse({ method }))
     return true
   }
   if (msg.type === 'GET_OAUTH_REDIRECT_URI') {
