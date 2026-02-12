@@ -106,6 +106,9 @@ export default function Popup() {
       if (areaName === 'sync' && changes['notion_data_source_order']) {
         loadDataSources()
       }
+      if (areaName === 'sync' && changes['notion_active_data_source_ids']) {
+        loadDataSources()
+      }
     }
     chrome.storage.onChanged?.addListener(listener)
     return () => chrome.storage.onChanged?.removeListener(listener)

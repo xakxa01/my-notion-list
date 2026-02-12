@@ -14,14 +14,21 @@ const NOTION_API = 'https://api.notion.com'
 // Context Menu
 const ROOT_MENU_ID = 'notion-save-root'
 const MENU_ID_PREFIX = 'notion_tpl_'
+const MENU_SEPARATOR = '::'
+const ROOT_MENU_BASE_TITLE = 'Save to Notion'
 
 // Storage Keys
-const SELECTED_DB_CACHE_KEY = 'notion_selected_db_cache'
+const SELECTED_DB_CACHE_KEY_PREFIX = 'notion_selected_db_cache_'
 const SELECTED_DB_STORAGE_KEY = 'notion_selected_database_id'
+const SELECTED_DB_STORAGE_IDS_KEY = 'notion_selected_database_ids'
+const DATA_SOURCE_ORDER_KEY = 'notion_data_source_order'
+const ACTIVE_DATA_SOURCE_IDS_KEY = 'notion_active_data_source_ids'
 const TEMPLATE_ORDER_KEY = 'notion_template_order'
+const DATA_SOURCES_LIST_CACHE_KEY = 'notion_data_sources_list_cache'
 const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
-const CACHE_TTL_MS = 20 * 60 * 1000 // 20 minutes
+const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
+const DATA_SOURCES_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
 const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
 const TRUSTED_OAUTH_PROXY_ORIGINS = [new URL(DEFAULT_OAUTH_PROXY_URL).origin, 'http://localhost:3000', 'http://localhost:5173']
@@ -53,7 +60,33 @@ function getToken(): Promise<string | null> {
 
 function setToken(token: string | null): Promise<void> {
   return new Promise((resolve) => {
-    chrome.storage.local.set({ notion_token: token ?? '' }, resolve)
+    chrome.storage.local.set({ notion_token: token ?? '', [DATA_SOURCES_LIST_CACHE_KEY]: '' }, resolve)
+  })
+}
+
+async function clearNotionCaches(): Promise<void> {
+  const keysToRemove = await new Promise<string[]>((resolve) => {
+    chrome.storage.local.get(null, (items) => {
+      const allKeys = Object.keys(items ?? {})
+      resolve(
+        allKeys.filter(
+          (key) => key === DATA_SOURCES_LIST_CACHE_KEY || key.startsWith(SELECTED_DB_CACHE_KEY_PREFIX)
+        )
+      )
+    })
+  })
+  if (keysToRemove.length === 0) return
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.remove(keysToRemove, () => resolve())
+  })
+}
+
+async function clearSelectedDbCaches(ids: string[]): Promise<void> {
+  const normalized = normalizeDatabaseIds(ids)
+  if (normalized.length === 0) return
+  const keysToRemove = normalized.map((id) => `${SELECTED_DB_CACHE_KEY_PREFIX}${id}`)
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.remove(keysToRemove, () => resolve())
   })
 }
 
@@ -65,17 +98,122 @@ function getNotificationsEnabled(): Promise<boolean> {
   })
 }
 
+function normalizeDatabaseIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return []
+  const unique = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)))
+  return unique
+}
+
+function sortIdsByOrder(ids: string[], order: string[]): string[] {
+  const rank = new Map(order.map((id, index) => [id, index]))
+  return [...ids].sort((a, b) => {
+    const ra = rank.has(a) ? (rank.get(a) as number) : Number.MAX_SAFE_INTEGER
+    const rb = rank.has(b) ? (rank.get(b) as number) : Number.MAX_SAFE_INTEGER
+    if (ra !== rb) return ra - rb
+    return 0
+  })
+}
+
+function getDataSourceOrder(): Promise<string[]> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([DATA_SOURCE_ORDER_KEY], (r) => {
+      resolve(normalizeDatabaseIds(r[DATA_SOURCE_ORDER_KEY]))
+    })
+  })
+}
+
+function setDataSourceOrder(order: string[]): Promise<void> {
+  const normalized = normalizeDatabaseIds(order)
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ [DATA_SOURCE_ORDER_KEY]: normalized }, () => resolve())
+  })
+}
+
+function getStoredActiveDataSourceIds(): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([ACTIVE_DATA_SOURCE_IDS_KEY], (r) => {
+      const raw = r[ACTIVE_DATA_SOURCE_IDS_KEY]
+      if (typeof raw === 'undefined') return resolve(null)
+      resolve(normalizeDatabaseIds(raw))
+    })
+  })
+}
+
+function setActiveDataSourceIds(ids: string[]): Promise<void> {
+  const normalized = normalizeDatabaseIds(ids)
+  return new Promise((resolve) => {
+    chrome.storage.sync.set({ [ACTIVE_DATA_SOURCE_IDS_KEY]: normalized }, () => resolve())
+  })
+}
+
+async function getActiveDataSourceIds(availableIds: string[]): Promise<string[]> {
+  const normalizedAvailable = normalizeDatabaseIds(availableIds)
+  const stored = await getStoredActiveDataSourceIds()
+
+  // First run: default to all accessible data sources.
+  if (stored === null) {
+    await setActiveDataSourceIds(normalizedAvailable)
+    return normalizedAvailable
+  }
+
+  const availableSet = new Set(normalizedAvailable)
+  const active = stored.filter((id) => availableSet.has(id))
+  if (JSON.stringify(active) !== JSON.stringify(stored)) {
+    await setActiveDataSourceIds(active)
+  }
+  return active
+}
+
+async function getOrderedDataSourceIds(token: string, forceRefresh = false): Promise<string[]> {
+  const sources = await searchDataSources(token, forceRefresh)
+  const sourceIds = normalizeDatabaseIds(sources.map((s) => s.id))
+  const savedOrder = await getDataSourceOrder()
+  const sorted = sortIdsByOrder(sourceIds, savedOrder)
+  if (JSON.stringify(sorted) !== JSON.stringify(savedOrder)) {
+    await setDataSourceOrder(sorted)
+  }
+  const activeIds = await getActiveDataSourceIds(sorted)
+  const activeSet = new Set(activeIds)
+  return sorted.filter((id) => activeSet.has(id))
+}
+
 function getSelectedDatabaseId(): Promise<string | null> {
   return new Promise((resolve) => {
-    chrome.storage.sync.get([SELECTED_DB_STORAGE_KEY], (r) =>
-      resolve((r[SELECTED_DB_STORAGE_KEY] as string) || null)
-    )
+    getToken()
+      .then((token) => {
+        if (!token) return resolve(null)
+        return getOrderedDataSourceIds(token, false).then((ids) => resolve(ids[0] || null))
+      })
+      .catch(() => resolve(null))
+  })
+}
+
+function getSelectedDatabaseIds(): Promise<string[]> {
+  return new Promise((resolve) => {
+    getToken()
+      .then((token) => {
+        if (!token) return resolve([])
+        return getOrderedDataSourceIds(token, false).then((ids) => resolve(ids))
+      })
+      .catch(() => resolve([]))
   })
 }
 
 function setSelectedDatabaseId(id: string | null): Promise<void> {
+  return setSelectedDatabaseIds(id ? [id] : [])
+}
+
+function setSelectedDatabaseIds(ids: string[]): Promise<void> {
+  const normalized = normalizeDatabaseIds(ids)
+  const primaryId = normalized[0] || ''
   return new Promise((resolve) => {
-    chrome.storage.sync.set({ [SELECTED_DB_STORAGE_KEY]: id ?? '' }, () => resolve())
+    chrome.storage.sync.set(
+      {
+        [SELECTED_DB_STORAGE_IDS_KEY]: normalized,
+        [SELECTED_DB_STORAGE_KEY]: primaryId,
+      },
+      () => resolve()
+    )
   })
 }
 
@@ -110,8 +248,8 @@ function isTrustedOAuthProxyUrl(rawUrl: string): boolean {
 async function exchangeOAuthCode(code: string): Promise<void> {
   const { proxyUrl } = await getOAuthConfig()
   const redirectUri = getOAuthRedirectUri()
-  if (!proxyUrl) throw new Error('Falta la URL del proxy OAuth en Opciones.')
-  if (!isTrustedOAuthProxyUrl(proxyUrl)) throw new Error('Proxy OAuth no permitido por seguridad.')
+  if (!proxyUrl) throw new Error('OAuth proxy URL is missing in Settings.')
+  if (!isTrustedOAuthProxyUrl(proxyUrl)) throw new Error('OAuth proxy is not allowed.')
 
   const res = await fetch(proxyUrl, {
     method: 'POST',
@@ -122,15 +260,15 @@ async function exchangeOAuthCode(code: string): Promise<void> {
     }),
   })
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
-  if (!res.ok) throw new Error(data.error || 'No se pudo completar el intercambio OAuth.')
-  if (!data.access_token) throw new Error('El proxy OAuth no devolvió access_token.')
+  if (!res.ok) throw new Error(data.error || 'OAuth exchange failed.')
+  if (!data.access_token) throw new Error('OAuth proxy did not return access_token.')
   await setToken(data.access_token)
   await refreshContextMenu()
 }
 
 async function startOAuthSignIn(): Promise<void> {
   const { clientId } = await getOAuthConfig()
-  if (!clientId) throw new Error('Falta Client ID de Notion en Opciones.')
+  if (!clientId) throw new Error('Notion Client ID is missing in Settings.')
 
   const redirectUri = getOAuthRedirectUri()
   const state = Math.random().toString(36).slice(2)
@@ -146,11 +284,11 @@ async function startOAuthSignIn(): Promise<void> {
       { url: authUrl.toString(), interactive: true },
       (url) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || 'OAuth cancelado o bloqueado.'))
+          reject(new Error(chrome.runtime.lastError.message || 'OAuth was canceled or blocked.'))
           return
         }
         if (!url) {
-          reject(new Error('No se recibió URL de retorno de OAuth.'))
+          reject(new Error('No OAuth callback URL was received.'))
           return
         }
         resolve(url)
@@ -160,11 +298,11 @@ async function startOAuthSignIn(): Promise<void> {
 
   const parsed = new URL(responseUrl)
   const returnedState = parsed.searchParams.get('state')
-  if (!returnedState || returnedState !== state) throw new Error('Estado OAuth inválido.')
+  if (!returnedState || returnedState !== state) throw new Error('Invalid OAuth state.')
   const oauthError = parsed.searchParams.get('error')
   if (oauthError) throw new Error(`Notion OAuth error: ${oauthError}`)
   const code = parsed.searchParams.get('code')
-  if (!code) throw new Error('No se recibió código de autorización.')
+  if (!code) throw new Error('No authorization code was received.')
 
   await exchangeOAuthCode(code)
 }
@@ -208,7 +346,7 @@ function getTitleFromResult(result: Record<string, unknown>): string {
       }
     }
   }
-  return 'Sin nombre'
+  return 'Untitled'
 }
 
 function parseNotionIcon(raw: unknown): NotionIcon {
@@ -280,43 +418,71 @@ function sortTemplatesByOrder(
 // DATABASE OPERATIONS
 // ============================================================================
 
-async function searchDataSources(token: string): Promise<Array<{ id: string; name: string }>> {
-  const dataSourceSearchRes = await notionFetch(token, '/v1/search', {
-    method: 'POST',
-    body: JSON.stringify({
-      filter: { property: 'object', value: 'data_source' },
-      page_size: 100,
-    }),
-  })
-  if (dataSourceSearchRes.ok) {
-    const data = (await dataSourceSearchRes.json()) as {
-      results?: Array<{ object: string; id: string; title?: Array<{ plain_text: string }> }>
+async function searchDataSources(token: string, forceRefresh = false): Promise<Array<{ id: string; name: string }>> {
+  if (!forceRefresh) {
+    const cachedRaw = await new Promise<string | undefined>((resolve) => {
+      chrome.storage.local.get([DATA_SOURCES_LIST_CACHE_KEY], (r) =>
+        resolve((r as Record<string, string | undefined>)[DATA_SOURCES_LIST_CACHE_KEY])
+      )
+    })
+    if (cachedRaw) {
+      try {
+        const cached = JSON.parse(cachedRaw) as { ts: number; sources: Array<{ id: string; name: string }> }
+        if (Date.now() - cached.ts < DATA_SOURCES_CACHE_TTL_MS && Array.isArray(cached.sources)) {
+          return cached.sources
+        }
+      } catch {
+        /* ignore malformed cache */
+      }
     }
-    const results = (data.results ?? [])
-      .filter((r) => r.object === 'data_source')
-      .map((r) => ({ id: r.id, name: getTitleFromResult(r) || 'Sin nombre' }))
-    if (results.length > 0) return results
   }
 
-  // Compatibilidad: algunos workspaces/tokens siguen devolviendo database en search.
-  const databaseSearchRes = await notionFetch(token, '/v1/search', {
-    method: 'POST',
-    body: JSON.stringify({
-      filter: { property: 'object', value: 'database' },
-      page_size: 100,
-    }),
+  const byId = new Map<string, { id: string; name: string }>()
+
+  const fetchSearch = async (payload: Record<string, unknown>): Promise<void> => {
+    let startCursor: string | null = null
+    let hasMore = true
+    while (hasMore) {
+      const body = startCursor ? { ...payload, start_cursor: startCursor } : payload
+      const res = await notionFetch(token, '/v1/search', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) break
+      const data = (await res.json()) as {
+        results?: Array<{ object: string; id: string; title?: Array<{ plain_text: string }> }>
+        has_more?: boolean
+        next_cursor?: string | null
+      }
+      const results = data.results ?? []
+      for (const r of results) {
+        if (r.object !== 'data_source' && r.object !== 'database') continue
+        if (!byId.has(r.id)) {
+          byId.set(r.id, { id: r.id, name: getTitleFromResult(r) || 'Untitled' })
+        }
+      }
+      hasMore = Boolean(data.has_more)
+      startCursor = data.next_cursor ?? null
+    }
+  }
+
+  // Most robust path: no filter, then compatibility fallbacks.
+  await fetchSearch({ page_size: 100 })
+  if (byId.size === 0) {
+    await fetchSearch({ filter: { property: 'object', value: 'data_source' }, page_size: 100 })
+  }
+  if (byId.size === 0) {
+    await fetchSearch({ filter: { property: 'object', value: 'database' }, page_size: 100 })
+  }
+
+  const result = Array.from(byId.values())
+  await new Promise<void>((resolve) => {
+    chrome.storage.local.set(
+      { [DATA_SOURCES_LIST_CACHE_KEY]: JSON.stringify({ ts: Date.now(), sources: result }) },
+      () => resolve()
+    )
   })
-  if (!databaseSearchRes.ok) {
-    const err = await databaseSearchRes.text()
-    throw new Error(`Search failed: ${databaseSearchRes.status} ${err}`)
-  }
-  const databaseData = (await databaseSearchRes.json()) as {
-    results?: Array<{ object: string; id: string; title?: Array<{ plain_text: string }> }>
-  }
-  const databaseResults = databaseData.results ?? []
-  return databaseResults
-    .filter((r) => r.object === 'database')
-    .map((r) => ({ id: r.id, name: getTitleFromResult(r) || 'Sin nombre' }))
+  return result
 }
 
 async function getDatabaseFull(token: string, databaseId: string): Promise<{
@@ -341,8 +507,8 @@ async function getDatabaseFull(token: string, databaseId: string): Promise<{
     }
     if (!titlePropertyKey) throw new Error(`No title property in data source ${databaseId}`)
     const name = dataSource.title
-      ? dataSource.title.map((t) => t.plain_text ?? '').join('').trim() || 'Sin nombre'
-      : 'Sin nombre'
+      ? dataSource.title.map((t) => t.plain_text ?? '').join('').trim() || 'Untitled'
+      : 'Untitled'
     return {
       dataSourceId: databaseId,
       name,
@@ -370,8 +536,8 @@ async function getDatabaseFull(token: string, databaseId: string): Promise<{
   }
   if (!titlePropertyKey) throw new Error(`No title property in database ${databaseId}`)
   const name = database.title
-    ? database.title.map((t) => t.plain_text ?? '').join('').trim() || 'Sin nombre'
-    : 'Sin nombre'
+    ? database.title.map((t) => t.plain_text ?? '').join('').trim() || 'Untitled'
+    : 'Untitled'
   const icon = parseNotionIcon(database.icon)
   return { dataSourceId: resolvedDataSourceId, name, icon, titlePropertyKey }
 }
@@ -442,7 +608,7 @@ async function listTemplates(
           ''
         )
         if (!id) continue
-        const name = String((t as Record<string, unknown>).name || 'Sin nombre')
+        const name = String((t as Record<string, unknown>).name || 'Untitled')
         const icon = parseNotionIcon((t as Record<string, unknown>).icon)
         const pageId = String(
           (t as Record<string, unknown>).page_id ||
@@ -489,9 +655,10 @@ async function fetchAndCacheSelectedDb(token: string, databaseId: string): Promi
     )
 
     const cached: CachedSelectedDb = { id: databaseId, dataSourceId, name, icon, titlePropertyKey, templates: uniqueTemplates }
+    const cacheKey = `${SELECTED_DB_CACHE_KEY_PREFIX}${databaseId}`
     await new Promise<void>((resolve) => {
       chrome.storage.local.set(
-        { [SELECTED_DB_CACHE_KEY]: JSON.stringify({ ...cached, ts: Date.now() }) },
+        { [cacheKey]: JSON.stringify({ ...cached, ts: Date.now() }) },
         () => resolve()
       )
     })
@@ -502,8 +669,9 @@ async function fetchAndCacheSelectedDb(token: string, databaseId: string): Promi
 }
 
 async function getCachedSelectedDb(token: string, databaseId: string): Promise<CachedSelectedDb | null> {
+  const cacheKey = `${SELECTED_DB_CACHE_KEY_PREFIX}${databaseId}`
   const raw = await new Promise<string | undefined>((resolve) => {
-    chrome.storage.local.get([SELECTED_DB_CACHE_KEY], (r) => resolve((r as Record<string, string | undefined>)[SELECTED_DB_CACHE_KEY]))
+    chrome.storage.local.get([cacheKey], (r) => resolve((r as Record<string, string | undefined>)[cacheKey]))
   })
   if (raw) {
     try {
@@ -515,7 +683,7 @@ async function getCachedSelectedDb(token: string, databaseId: string): Promise<C
         return {
           id: parsed.id,
           dataSourceId: parsed.dataSourceId || parsed.id,
-          name: parsed.name || 'Sin nombre',
+          name: parsed.name || 'Untitled',
           icon: parsed.icon || null,
           titlePropertyKey: parsed.titlePropertyKey,
           templates: parsed.templates,
@@ -554,6 +722,15 @@ async function getDatabaseInfo(
   }
 }
 
+async function getAllDatabaseInfos(
+  token: string,
+  forceRefresh = false
+): Promise<Array<{ id: string; name: string; icon: NotionIcon; templates: Array<{ id: string; name: string; icon?: NotionIcon }> }>> {
+  const orderedIds = await getOrderedDataSourceIds(token, forceRefresh)
+  const infos = await Promise.all(orderedIds.map((id) => getDatabaseInfo(token, id, forceRefresh)))
+  return infos.filter((info): info is { id: string; name: string; icon: NotionIcon; templates: Array<{ id: string; name: string; icon?: NotionIcon }> } => Boolean(info))
+}
+
 // ============================================================================
 // CONTEXT MENU MANAGEMENT
 // ============================================================================
@@ -564,32 +741,63 @@ function clearContextMenu(): Promise<void> {
   })
 }
 
-function buildContextMenu(cached: CachedSelectedDb): Promise<void> {
-  return new Promise(async (resolve) => {
-    const order = await getTemplateOrder(cached.id)
-    const sortedTemplates = sortTemplatesByOrder(cached.templates, order)
+function createMenuItem(createProperties: chrome.contextMenus.CreateProperties): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.contextMenus.create(createProperties, () => resolve())
+  })
+}
 
-    chrome.contextMenus.create(
-      {
-        id: ROOT_MENU_ID,
-        title: "Guardar '%s' en Notion",
-        contexts: ['selection'],
-      },
-      () => {
-        sortedTemplates.forEach((tpl) => {
-          chrome.contextMenus.create(
-            {
-              id: `${MENU_ID_PREFIX}${tpl.id}`,
-              parentId: ROOT_MENU_ID,
-              title: getTemplateMenuTitle(tpl),
-              contexts: ['selection'],
-            },
-            () => {}
-          )
+function getTemplateMenuId(databaseId: string, templateId: string): string {
+  return `${MENU_ID_PREFIX}${databaseId}${MENU_SEPARATOR}${templateId}`
+}
+
+function truncateLabel(text: string, maxChars = 20): string {
+  const normalized = text.trim().replace(/\s+/g, ' ')
+  if (normalized.length <= maxChars) return normalized
+  return `${normalized.slice(0, maxChars)}...`
+}
+
+function parseTemplateFromMenuId(menuItemId: string): { databaseId: string; templateId: string } | null {
+  if (!menuItemId.startsWith(MENU_ID_PREFIX)) return null
+  const rest = menuItemId.slice(MENU_ID_PREFIX.length)
+  const [databaseId, templateId] = rest.split(MENU_SEPARATOR)
+  if (!databaseId || !templateId) return null
+  return { databaseId, templateId }
+}
+
+function buildContextMenu(cachedItems: CachedSelectedDb[]): Promise<void> {
+  return new Promise(async (resolve) => {
+    await createMenuItem({
+      id: ROOT_MENU_ID,
+      title: ROOT_MENU_BASE_TITLE,
+      contexts: ['selection'],
+    })
+
+    for (const cached of cachedItems) {
+      const order = await getTemplateOrder(cached.id)
+      const sortedTemplates = sortTemplatesByOrder(cached.templates, order)
+      const parentId = cachedItems.length > 1 ? `notion-ds-${cached.id}` : ROOT_MENU_ID
+
+      if (cachedItems.length > 1) {
+        await createMenuItem({
+          id: parentId,
+          parentId: ROOT_MENU_ID,
+          title: cached.name || 'Untitled',
+          contexts: ['selection'],
         })
-        resolve()
       }
-    )
+
+      for (const tpl of sortedTemplates) {
+        await createMenuItem({
+          id: getTemplateMenuId(cached.id, tpl.id),
+          parentId,
+          title: getTemplateMenuTitle(tpl),
+          contexts: ['selection'],
+        })
+      }
+    }
+
+    resolve()
   })
 }
 
@@ -598,7 +806,7 @@ function buildContextMenuNoDb(): Promise<void> {
     chrome.contextMenus.create(
       {
         id: ROOT_MENU_ID,
-        title: "Guardar '%s' en Notion",
+        title: ROOT_MENU_BASE_TITLE,
         contexts: ['selection'],
       },
       () => {
@@ -606,7 +814,7 @@ function buildContextMenuNoDb(): Promise<void> {
           {
             id: 'notion-config-options',
             parentId: ROOT_MENU_ID,
-            title: 'Configura la base de datos en Opciones',
+            title: 'Configure data sources in Settings',
             contexts: ['selection'],
           },
           () => resolve()
@@ -620,8 +828,8 @@ async function refreshContextMenu(): Promise<void> {
   await clearContextMenu()
   const token = await getToken()
   if (!token) return
-  const selectedId = await getSelectedDatabaseId()
-  if (!selectedId) {
+  const selectedIds = await getSelectedDatabaseIds()
+  if (selectedIds.length === 0) {
     try {
       await buildContextMenuNoDb()
     } catch {
@@ -630,8 +838,10 @@ async function refreshContextMenu(): Promise<void> {
     return
   }
   try {
-    const cached = await getCachedSelectedDb(token, selectedId)
-    if (cached) await buildContextMenu(cached)
+    const cachedItems = (await Promise.all(selectedIds.map((id) => getCachedSelectedDb(token, id)))).filter(
+      (item): item is CachedSelectedDb => Boolean(item)
+    )
+    if (cachedItems.length > 0) await buildContextMenu(cachedItems)
   } catch {
     // no menu on error
   }
@@ -669,12 +879,6 @@ async function createPage(
   return page
 }
 
-function parseTemplateFromMenuId(menuItemId: string): string | null {
-  if (!menuItemId.startsWith(MENU_ID_PREFIX)) return null
-  const rest = menuItemId.slice(MENU_ID_PREFIX.length)
-  return rest || null
-}
-
 function openOptionsInTab(): void {
   if (chrome.runtime.openOptionsPage) {
     chrome.runtime.openOptionsPage()
@@ -702,14 +906,12 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
     return
   }
   if (info.menuItemId !== ROOT_MENU_ID && typeof info.menuItemId === 'string' && info.menuItemId.startsWith(MENU_ID_PREFIX)) {
-    const templateType = parseTemplateFromMenuId(info.menuItemId)
+    const parsedTemplate = parseTemplateFromMenuId(info.menuItemId)
     const selectionText = (info.selectionText ?? '').trim()
-    if (templateType === null || !selectionText) return
+    if (!parsedTemplate || !selectionText) return
     const token = await getToken()
     if (!token) return
-    const databaseId = await getSelectedDatabaseId()
-    if (!databaseId) return
-    const cached = await getCachedSelectedDb(token, databaseId)
+    const cached = await getCachedSelectedDb(token, parsedTemplate.databaseId)
     if (!cached) return
     try {
       await createPage(
@@ -717,15 +919,15 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
         cached.dataSourceId,
         cached.titlePropertyKey,
         selectionText,
-        templateType
+        parsedTemplate.templateId
       )
       const showNotif = await getNotificationsEnabled()
       if (showNotif && chrome.notifications) {
         chrome.notifications.create(`notion-save-${Date.now()}`, {
           type: 'basic',
           iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDAwIi8+Cjwvc3ZnPg==',
-          title: 'Guardado en Notion',
-          message: `Página creada: "${selectionText.slice(0, 50)}${selectionText.length > 50 ? '…' : ''}"`,
+          title: 'Saved to Notion',
+          message: `Page created: "${selectionText.slice(0, 50)}${selectionText.length > 50 ? '…' : ''}"`,
         })
       }
     } catch (err) {
@@ -734,7 +936,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
         chrome.notifications.create({
           type: 'basic',
           iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDAwIi8+Cjwvc3ZnPg==',
-          title: 'Error al guardar en Notion',
+          title: 'Error while saving to Notion',
           message: msg.slice(0, 200),
         })
       }
@@ -742,9 +944,23 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   }
 })
 
+chrome.contextMenus.onShown?.addListener((info) => {
+  if (!info.selectionText) return
+  const label = truncateLabel(info.selectionText)
+  chrome.contextMenus.update(ROOT_MENU_ID, { title: `Save '${label}' to Notion` }, () => {
+    chrome.contextMenus.refresh()
+  })
+})
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.notion_token) refreshContextMenu()
-  if (areaName === 'sync' && changes[SELECTED_DB_STORAGE_KEY]) refreshContextMenu()
+  if (
+    areaName === 'sync' &&
+    (changes[SELECTED_DB_STORAGE_KEY] ||
+      changes[SELECTED_DB_STORAGE_IDS_KEY] ||
+      changes[DATA_SOURCE_ORDER_KEY] ||
+      changes[ACTIVE_DATA_SOURCE_IDS_KEY])
+  ) refreshContextMenu()
 })
 
 chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?: string }, _sender, sendResponse) => {
@@ -769,8 +985,8 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
       .catch((err) => {
         const raw = err instanceof Error ? err.message : String(err)
         const errorMessage = /cancelado|canceled|blocked|bloqueado/i.test(raw)
-          ? 'Inicio de sesión cancelado.'
-          : 'No se pudo iniciar sesión con Notion. Revisa la configuración OAuth.'
+          ? 'Sign-in canceled.'
+          : 'Could not sign in to Notion. Check OAuth configuration.'
         sendResponse({ ok: false, error: errorMessage })
       })
     return true
@@ -781,14 +997,21 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
       .catch((err) => {
         const raw = err instanceof Error ? err.message : String(err)
         const errorMessage = /cancelado|canceled|blocked|bloqueado/i.test(raw)
-          ? 'Inicio de sesión cancelado.'
-          : 'No se pudo completar la conexión OAuth.'
+          ? 'Sign-in canceled.'
+          : 'Could not complete OAuth connection.'
         sendResponse({ ok: false, error: errorMessage })
       })
     return true
   }
   if (msg.type === 'REFRESH_MENU') {
     refreshContextMenu().then(() => sendResponse({ ok: true }))
+    return true
+  }
+  if (msg.type === 'HARD_SYNC') {
+    clearNotionCaches()
+      .then(() => refreshContextMenu())
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }))
     return true
   }
   if (msg.type === 'OPEN_OPTIONS') {
@@ -800,20 +1023,88 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     getToken()
       .then((token) => {
         if (!token) return sendResponse({ databases: [] })
-        return searchDataSources(token).then((dbs) => sendResponse({ databases: dbs }))
+        return searchDataSources(token).then(async (dbs) => {
+          const allIds = normalizeDatabaseIds(dbs.map((db) => db.id))
+          const activeIds = await getActiveDataSourceIds(allIds)
+          sendResponse({ databases: dbs, activeIds })
+        })
       })
       .catch(() => sendResponse({ databases: [] }))
+    return true
+  }
+  if (msg.type === 'GET_ACTIVE_DATA_SOURCE_IDS') {
+    getToken()
+      .then((token) => {
+        if (!token) return sendResponse({ activeIds: [] })
+        return searchDataSources(token).then(async (dbs) => {
+          const allIds = normalizeDatabaseIds(dbs.map((db) => db.id))
+          const activeIds = await getActiveDataSourceIds(allIds)
+          sendResponse({ activeIds })
+        })
+      })
+      .catch(() => sendResponse({ activeIds: [] }))
+    return true
+  }
+  if (msg.type === 'SET_ACTIVE_DATA_SOURCE_IDS' && Array.isArray((msg as unknown as { ids?: unknown[] }).ids)) {
+    const requestedIds = normalizeDatabaseIds((msg as unknown as { ids: string[] }).ids)
+    getToken()
+      .then((token) => {
+        if (!token) {
+          return setActiveDataSourceIds(requestedIds).then(() => sendResponse({ ok: true }))
+        }
+        return searchDataSources(token).then(async (dbs) => {
+          const allIds = normalizeDatabaseIds(dbs.map((db) => db.id))
+          const allowedSet = new Set(allIds)
+          const nextActive = requestedIds.filter((id) => allowedSet.has(id))
+          const prevActive = await getActiveDataSourceIds(allIds)
+          const nextActiveSet = new Set(nextActive)
+          const disabled = prevActive.filter((id) => !nextActiveSet.has(id))
+
+          await setActiveDataSourceIds(nextActive)
+          await clearSelectedDbCaches(disabled)
+          await refreshContextMenu()
+          sendResponse({ ok: true, activeIds: nextActive })
+        })
+      })
+      .catch(() => sendResponse({ ok: false }))
     return true
   }
   if (msg.type === 'GET_SELECTED_DATABASE_ID') {
     getSelectedDatabaseId().then((id) => sendResponse({ databaseId: id }))
     return true
   }
+  if (msg.type === 'GET_SELECTED_DATABASE_IDS') {
+    getSelectedDatabaseIds().then((ids) => sendResponse({ databaseIds: ids }))
+    return true
+  }
+  if (msg.type === 'GET_DATA_SOURCE_ORDER') {
+    getDataSourceOrder().then((order) => sendResponse({ order }))
+    return true
+  }
+  if (msg.type === 'SET_DATA_SOURCE_ORDER' && Array.isArray((msg as unknown as { order?: unknown[] }).order)) {
+    const order = normalizeDatabaseIds((msg as unknown as { order: string[] }).order)
+    setDataSourceOrder(order).then(() => {
+      refreshContextMenu()
+      sendResponse({ ok: true })
+    })
+    return true
+  }
+  if (msg.type === 'GET_ALL_DATABASE_INFOS') {
+    getToken()
+      .then((token) => {
+        if (!token) return sendResponse({ databases: [] })
+        const forceRefresh = Boolean((msg as unknown as { forceRefresh?: boolean }).forceRefresh)
+        return getAllDatabaseInfos(token, forceRefresh).then((databases) => sendResponse({ databases }))
+      })
+      .catch(() => sendResponse({ databases: [] }))
+    return true
+  }
   if (msg.type === 'GET_SELECTED_DATABASE_INFO') {
     getToken()
       .then((token) => {
         if (!token) return sendResponse({ database: null })
-        return getSelectedDatabaseId().then((dbId) => {
+        return getSelectedDatabaseIds().then((ids) => {
+          const dbId = ids[0] || null
           if (!dbId) return sendResponse({ database: null })
           const forceRefresh = Boolean((msg as unknown as { forceRefresh?: boolean }).forceRefresh)
           return getDatabaseInfo(token, dbId, forceRefresh).then((info) => sendResponse({ database: info }))
@@ -825,6 +1116,14 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
   if (msg.type === 'SET_SELECTED_DATABASE_ID' && typeof (msg as unknown as { databaseId?: string }).databaseId !== 'undefined') {
     const id = ((msg as unknown) as { databaseId: string | null }).databaseId
     setSelectedDatabaseId(id).then(() => {
+      refreshContextMenu()
+      sendResponse({ ok: true })
+    })
+    return true
+  }
+  if (msg.type === 'SET_SELECTED_DATABASE_IDS' && Array.isArray((msg as unknown as { databaseIds?: unknown[] }).databaseIds)) {
+    const ids = ((msg as unknown) as { databaseIds: string[] }).databaseIds
+    Promise.all([setSelectedDatabaseIds(ids), setDataSourceOrder(ids)]).then(() => {
       refreshContextMenu()
       sendResponse({ ok: true })
     })

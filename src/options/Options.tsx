@@ -19,11 +19,32 @@ type DbOption = { id: string; name: string }
 
 export default function Options() {
   const [databases, setDatabases] = useState<DbOption[]>([])
+  const [activeIds, setActiveIds] = useState<string[]>([])
   const [loadingDbs, setLoadingDbs] = useState(false)
   const [dbLoadMessage, setDbLoadMessage] = useState<string | null>(null)
+  const [savingAccess, setSavingAccess] = useState(false)
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
+
+  const loadDataSources = () => {
+    setLoadingDbs(true)
+    setDbLoadMessage('Loading Notion data sources...')
+    chrome.runtime.sendMessage({ type: 'GET_DATABASES' }, (r: unknown) => {
+      setLoadingDbs(false)
+      const raw = (r as { databases?: DbOption[] })?.databases ?? []
+      const list = Array.from(new Map(raw.map((db) => [db.id, db])).values())
+      const rawActive = (r as { activeIds?: string[] })?.activeIds ?? []
+      const activeSet = new Set(rawActive.length > 0 ? rawActive : list.map((db) => db.id))
+      setDatabases(list)
+      setActiveIds(list.map((db) => db.id).filter((id) => activeSet.has(id)))
+      setDbLoadMessage(
+        list.length === 0
+          ? 'No accessible data sources were found for this account/token.'
+          : `${list.length} accessible data source${list.length === 1 ? '' : 's'} detected.`
+      )
+    })
+  }
 
   useEffect(() => {
     chrome.storage.sync.get([OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY], (r) => {
@@ -35,20 +56,7 @@ export default function Options() {
       const redirectUri = (r as { redirectUri?: string })?.redirectUri || ''
       setOauthRedirectUri(redirectUri)
     })
-
-    setLoadingDbs(true)
-    setDbLoadMessage('Loading Notion data sources...')
-    chrome.runtime.sendMessage({ type: 'GET_DATABASES' }, (r: unknown) => {
-      setLoadingDbs(false)
-      const raw = (r as { databases?: DbOption[] })?.databases ?? []
-      const list = Array.from(new Map(raw.map((db) => [db.id, db])).values())
-      setDatabases(list)
-      setDbLoadMessage(
-        list.length === 0
-          ? 'No accessible data sources were found for this account/token.'
-          : `${list.length} accessible data source${list.length === 1 ? '' : 's'} detected and used automatically.`
-      )
-    })
+    loadDataSources()
   }, [])
 
   const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,6 +71,18 @@ export default function Options() {
     chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: value.trim() })
   }
 
+  const handleToggleDataSource = (id: string, checked: boolean) => {
+    const currentSet = new Set(activeIds)
+    if (checked) currentSet.add(id)
+    else currentSet.delete(id)
+    const next = databases.map((db) => db.id).filter((dbId) => currentSet.has(dbId))
+    setActiveIds(next)
+    setSavingAccess(true)
+    chrome.runtime.sendMessage({ type: 'SET_ACTIVE_DATA_SOURCE_IDS', ids: next }, () => {
+      setSavingAccess(false)
+    })
+  }
+
   return (
     <div>
       <h1>Settings - My Notion List</h1>
@@ -70,19 +90,33 @@ export default function Options() {
       <div className="option-block">
         <label className="option-label">Data source access</label>
         <p className="option-hint">
-          Data sources are discovered automatically from your Notion login/token.
+          Enable or disable which accessible data sources should be used in the extension.
         </p>
         <div className="data-source-card">
           <div className="data-source-header">
             <span className="data-source-title">Detected data sources</span>
             <span className="data-source-count">{databases.length}</span>
           </div>
+          <div className="data-source-actions">
+            <button type="button" className="refresh-btn" onClick={loadDataSources} disabled={loadingDbs || savingAccess}>
+              {loadingDbs ? 'Refreshing...' : 'Refresh accessible list'}
+            </button>
+            {savingAccess && <span className="option-hint">Saving...</span>}
+          </div>
           <p className="option-hint data-source-message">{loadingDbs ? 'Checking access...' : dbLoadMessage}</p>
           {databases.length > 0 && (
             <ul className="data-source-list">
               {databases.map((db) => (
                 <li key={db.id} className="data-source-item">
-                  {db.name}
+                  <label className="data-source-item-label">
+                    <input
+                      type="checkbox"
+                      checked={activeIds.includes(db.id)}
+                      onChange={(e) => handleToggleDataSource(db.id, e.target.checked)}
+                      disabled={savingAccess}
+                    />
+                    <span>{db.name}</span>
+                  </label>
                 </li>
               ))}
             </ul>
