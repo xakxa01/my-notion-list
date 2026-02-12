@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import { IconChevronLeft, IconChevronRight, IconEye, IconEyeOff, IconLogout, IconRefresh, IconSettings } from '@tabler/icons-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  IconChevronLeft,
+  IconChevronRight,
+  IconEye,
+  IconEyeOff,
+  IconLogout,
+  IconRefresh,
+  IconSettings,
+} from '@tabler/icons-react'
 import appLogo from '../assets/app-logo.svg'
 import notionLogo from '../assets/notion-logo.svg'
 
@@ -7,8 +15,12 @@ declare const chrome: {
   runtime: { sendMessage: (msg: unknown, cb: (r: unknown) => void) => void }
   storage: {
     onChanged?: {
-      addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
-      removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
+      addListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
+      removeListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
     }
   }
 }
@@ -22,7 +34,8 @@ type DataSourceInfo = {
 }
 
 export default function Popup() {
-  const INTERNAL_TOKEN_HELP_URL = 'https://www.notion.com/help/create-integrations-with-the-notion-api'
+  const INTERNAL_TOKEN_HELP_URL =
+    'https://www.notion.com/help/create-integrations-with-the-notion-api'
   const [token, setTokenState] = useState<string | null>(null)
   const [inputToken, setInputToken] = useState('')
   const [showToken, setShowToken] = useState(false)
@@ -43,7 +56,8 @@ export default function Popup() {
   const [showDataSourceOrder, setShowDataSourceOrder] = useState(false)
 
   const currentDataSource = useMemo(
-    () => (dataSources.length > 0 ? dataSources[Math.min(currentIndex, dataSources.length - 1)] : null),
+    () =>
+      dataSources.length > 0 ? dataSources[Math.min(currentIndex, dataSources.length - 1)] : null,
     [currentIndex, dataSources]
   )
 
@@ -55,28 +69,34 @@ export default function Popup() {
     })
   }, [])
 
-  const loadDataSources = (forceRefresh = false, tokenOverride?: string | null) => {
-    const effectiveToken = tokenOverride ?? token
-    if (!effectiveToken) {
-      setDataSources([])
-      setTemplatesOrder([])
-      setSyncingNow(false)
-      return
-    }
+  const loadDataSources = useCallback(
+    (forceRefresh = false, tokenOverride?: string | null) => {
+      const effectiveToken = tokenOverride ?? token
+      if (!effectiveToken) {
+        setDataSources([])
+        setTemplatesOrder([])
+        setSyncingNow(false)
+        return
+      }
 
-    setLoadingSources(true)
-    chrome.runtime.sendMessage({ type: 'GET_ALL_DATABASE_INFOS', forceRefresh, token: effectiveToken }, (r: unknown) => {
-      const raw = (r as { databases?: DataSourceInfo[] })?.databases ?? []
-      setDataSources(raw)
-      setCurrentIndex((prev) => Math.min(prev, Math.max(0, raw.length - 1)))
-      setLoadingSources(false)
-      if (forceRefresh) setSyncingNow(false)
-    })
-  }
+      setLoadingSources(true)
+      chrome.runtime.sendMessage(
+        { type: 'GET_ALL_DATABASE_INFOS', forceRefresh, token: effectiveToken },
+        (r: unknown) => {
+          const raw = (r as { databases?: DataSourceInfo[] })?.databases ?? []
+          setDataSources(raw)
+          setCurrentIndex((prev) => Math.min(prev, Math.max(0, raw.length - 1)))
+          setLoadingSources(false)
+          if (forceRefresh) setSyncingNow(false)
+        }
+      )
+    },
+    [token]
+  )
 
   useEffect(() => {
     loadDataSources()
-  }, [token])
+  }, [loadDataSources])
 
   useEffect(() => {
     if (!message) return
@@ -89,10 +109,13 @@ export default function Popup() {
       setTemplatesOrder([])
       return
     }
-    chrome.runtime.sendMessage({ type: 'GET_TEMPLATE_ORDER', databaseId: currentDataSource.id }, (r: unknown) => {
-      const order = (r as { order?: string[] })?.order ?? []
-      setTemplatesOrder(order)
-    })
+    chrome.runtime.sendMessage(
+      { type: 'GET_TEMPLATE_ORDER', databaseId: currentDataSource.id },
+      (r: unknown) => {
+        const order = (r as { order?: string[] })?.order ?? []
+        setTemplatesOrder(order)
+      }
+    )
   }, [currentDataSource?.id])
 
   useEffect(() => {
@@ -113,7 +136,7 @@ export default function Popup() {
     }
     chrome.storage.onChanged?.addListener(listener)
     return () => chrome.storage.onChanged?.removeListener(listener)
-  }, [token])
+  }, [loadDataSources])
 
   const handleSaveToken = () => {
     const value = inputToken.trim()
@@ -174,7 +197,10 @@ export default function Popup() {
 
   const persistSourceOrder = () => {
     if (!pendingSourceOrder) return
-    chrome.runtime.sendMessage({ type: 'SET_DATA_SOURCE_ORDER', order: pendingSourceOrder }, () => {})
+    chrome.runtime.sendMessage(
+      { type: 'SET_DATA_SOURCE_ORDER', order: pendingSourceOrder },
+      () => {}
+    )
     setPendingSourceOrder(null)
   }
 
@@ -261,7 +287,9 @@ export default function Popup() {
                 <button
                   type="button"
                   className="compact-btn compact-icon-btn"
-                  onClick={() => setCurrentIndex((i) => (i - 1 + dataSources.length) % dataSources.length)}
+                  onClick={() =>
+                    setCurrentIndex((i) => (i - 1 + dataSources.length) % dataSources.length)
+                  }
                   title="Previous data source"
                   aria-label="Previous data source"
                 >
@@ -320,18 +348,18 @@ export default function Popup() {
               title={showToken ? 'Hide token' : 'Show token'}
               aria-label={showToken ? 'Hide token' : 'Show token'}
             >
-              {showToken ? (
-                <IconEyeOff size={18} stroke={2} />
-              ) : (
-                <IconEye size={18} stroke={2} />
-              )}
+              {showToken ? <IconEyeOff size={18} stroke={2} /> : <IconEye size={18} stroke={2} />}
             </button>
           </div>
           <div className="auth-actions">
             <button className="primary auth-btn" onClick={handleSaveToken} disabled={saving}>
               Connect with token
             </button>
-            <button className="auth-btn" onClick={handleOAuthLogin} disabled={oauthLoading || saving}>
+            <button
+              className="auth-btn"
+              onClick={handleOAuthLogin}
+              disabled={oauthLoading || saving}
+            >
               {oauthLoading ? (
                 'Connecting...'
               ) : (
@@ -441,7 +469,11 @@ export default function Popup() {
                     {tpl.icon?.type === 'emoji' ? (
                       <span>{tpl.icon.emoji}</span>
                     ) : tpl.icon?.type === 'file' ? (
-                      <img src={tpl.icon.file.url} alt="" style={{ width: 18, height: 18, verticalAlign: 'middle' }} />
+                      <img
+                        src={tpl.icon.file.url}
+                        alt=""
+                        style={{ width: 18, height: 18, verticalAlign: 'middle' }}
+                      />
                     ) : (
                       <span>📄</span>
                     )}
@@ -453,7 +485,6 @@ export default function Popup() {
           </div>
         </div>
       )}
-
     </div>
   )
 }
