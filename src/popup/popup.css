@@ -192,7 +192,7 @@ input[type="text"] {
 }
 
 .controls-row .compact-btn {
-  height: 40px;
+  height: 36px;
   box-sizing: border-box;
 }
 
@@ -209,9 +209,9 @@ input[type="text"] {
 }
 
 .sync-icon-btn {
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -252,7 +252,7 @@ input[type="text"] {
 .compact-icon-btn {
   width: 32px;
   min-width: 32px;
-  height: 40px;
+  height: 36px;
   padding: 0;
   display: inline-flex;
   align-items: center;
