@@ -6,10 +6,16 @@
   "permissions": [
     "contextMenus",
     "storage",
-    "notifications"
+    "notifications",
+    "identity",
+    "permissions"
   ],
   "host_permissions": [
     "https://api.notion.com/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
   ],
   "icons": {
     "16": "icon-16.svg",

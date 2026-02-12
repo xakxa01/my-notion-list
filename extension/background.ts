@@ -19,6 +19,8 @@ const MENU_ID_PREFIX = 'notion_tpl_'
 const SELECTED_DB_CACHE_KEY = 'notion_selected_db_cache'
 const SELECTED_DB_STORAGE_KEY = 'notion_selected_database_id'
 const TEMPLATE_ORDER_KEY = 'notion_template_order'
+const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
+const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 // ============================================================================
@@ -72,6 +74,102 @@ function setSelectedDatabaseId(id: string | null): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.sync.set({ [SELECTED_DB_STORAGE_KEY]: id ?? '' }, () => resolve())
   })
+}
+
+function getOAuthConfig(): Promise<{ clientId: string; proxyUrl: string }> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY], (r) => {
+      resolve({
+        clientId: String(r[OAUTH_CLIENT_ID_KEY] || '').trim(),
+        proxyUrl: String(r[OAUTH_PROXY_URL_KEY] || '').trim(),
+      })
+    })
+  })
+}
+
+function getOAuthRedirectUri(): string {
+  return chrome.identity.getRedirectURL()
+}
+
+async function ensurePermissionForUrl(rawUrl: string): Promise<boolean> {
+  try {
+    const url = new URL(rawUrl)
+    const originPattern = `${url.origin}/*`
+    const alreadyGranted = await new Promise<boolean>((resolve) => {
+      chrome.permissions.contains({ origins: [originPattern] }, resolve)
+    })
+    if (alreadyGranted) return true
+    return new Promise<boolean>((resolve) => {
+      chrome.permissions.request({ origins: [originPattern] }, (granted) => resolve(Boolean(granted)))
+    })
+  } catch {
+    return false
+  }
+}
+
+async function exchangeOAuthCode(code: string): Promise<void> {
+  const { proxyUrl } = await getOAuthConfig()
+  const redirectUri = getOAuthRedirectUri()
+  if (!proxyUrl) throw new Error('Falta la URL del proxy OAuth en Opciones.')
+  if (!/^https?:\/\//i.test(proxyUrl)) throw new Error('La URL del proxy OAuth debe iniciar con http:// o https://.')
+
+  const permissionOk = await ensurePermissionForUrl(proxyUrl)
+  if (!permissionOk) throw new Error('Permiso de red denegado para el proxy OAuth.')
+
+  const res = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      redirect_uri: redirectUri,
+    }),
+  })
+  const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
+  if (!res.ok) throw new Error(data.error || `OAuth exchange failed: ${res.status}`)
+  if (!data.access_token) throw new Error('El proxy OAuth no devolvió access_token.')
+  await setToken(data.access_token)
+  await refreshContextMenu()
+}
+
+async function startOAuthSignIn(): Promise<void> {
+  const { clientId } = await getOAuthConfig()
+  if (!clientId) throw new Error('Falta Client ID de Notion en Opciones.')
+
+  const redirectUri = getOAuthRedirectUri()
+  const state = Math.random().toString(36).slice(2)
+  const authUrl = new URL('https://api.notion.com/v1/oauth/authorize')
+  authUrl.searchParams.set('owner', 'user')
+  authUrl.searchParams.set('client_id', clientId)
+  authUrl.searchParams.set('redirect_uri', redirectUri)
+  authUrl.searchParams.set('response_type', 'code')
+  authUrl.searchParams.set('state', state)
+
+  const responseUrl = await new Promise<string>((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow(
+      { url: authUrl.toString(), interactive: true },
+      (url) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'OAuth cancelado o bloqueado.'))
+          return
+        }
+        if (!url) {
+          reject(new Error('No se recibió URL de retorno de OAuth.'))
+          return
+        }
+        resolve(url)
+      }
+    )
+  })
+
+  const parsed = new URL(responseUrl)
+  const returnedState = parsed.searchParams.get('state')
+  if (!returnedState || returnedState !== state) throw new Error('Estado OAuth inválido.')
+  const oauthError = parsed.searchParams.get('error')
+  if (oauthError) throw new Error(`Notion OAuth error: ${oauthError}`)
+  const code = parsed.searchParams.get('code')
+  if (!code) throw new Error('No se recibió código de autorización.')
+
+  await exchangeOAuthCode(code)
 }
 
 // ============================================================================
@@ -643,7 +741,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'sync' && changes[SELECTED_DB_STORAGE_KEY]) refreshContextMenu()
 })
 
-chrome.runtime.onMessage.addListener((msg: { type: string; token?: string }, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?: string }, _sender, sendResponse) => {
   if (msg.type === 'SET_TOKEN' && msg.token !== undefined) {
     setToken(msg.token || null).then(() => {
       refreshContextMenu()
@@ -653,6 +751,28 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string }, _se
   }
   if (msg.type === 'GET_TOKEN') {
     getToken().then((t) => sendResponse({ token: t }))
+    return true
+  }
+  if (msg.type === 'GET_OAUTH_REDIRECT_URI') {
+    sendResponse({ redirectUri: getOAuthRedirectUri() })
+    return true
+  }
+  if (msg.type === 'START_OAUTH') {
+    startOAuthSignIn()
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        sendResponse({ ok: false, error: errorMessage })
+      })
+    return true
+  }
+  if (msg.type === 'OAUTH_CODE' && msg.code) {
+    exchangeOAuthCode(msg.code)
+      .then(() => sendResponse({ ok: true }))
+      .catch((err) => {
+        const errorMessage = err instanceof Error ? err.message : String(err)
+        sendResponse({ ok: false, error: errorMessage })
+      })
     return true
   }
   if (msg.type === 'REFRESH_MENU') {

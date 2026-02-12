@@ -24,6 +24,7 @@ export default function Popup() {
   const [inputToken, setInputToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [oauthLoading, setOauthLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [guideOpen, setGuideOpen] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<DatabaseInfo | null>(null)
@@ -124,6 +125,26 @@ export default function Popup() {
     })
   }
 
+  const handleOAuthLogin = () => {
+    setOauthLoading(true)
+    setMessage(null)
+    chrome.runtime.sendMessage({ type: 'START_OAUTH' }, (r: unknown) => {
+      setOauthLoading(false)
+      const res = r as { ok?: boolean; error?: string }
+      if (res?.ok) {
+        chrome.runtime.sendMessage({ type: 'GET_TOKEN' }, (tokenRes: unknown) => {
+          const t = (tokenRes as { token?: string | null })?.token ?? null
+          setTokenState(t)
+          if (t) setInputToken(t)
+          setMessage('Sesión iniciada con Notion.')
+          setTimeout(() => loadDatabaseInfo(), 300)
+        })
+      } else {
+        setMessage(res?.error || 'No se pudo iniciar sesión con Notion.')
+      }
+    })
+  }
+
   return (
     <div>
       <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -134,6 +155,12 @@ export default function Popup() {
       {!token ? (
         <>
           <div className="mb">
+            <button className="primary mb" onClick={handleOAuthLogin} disabled={oauthLoading || saving}>
+              {oauthLoading ? 'Conectando...' : 'Iniciar sesión con Notion'}
+            </button>
+            <p style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+              Puedes continuar con Google dentro de la pantalla de Notion si tu workspace lo permite.
+            </p>
             <label className="label">Token de integración (Notion)</label>
             <div className="token-input-row mb">
               <input
@@ -324,7 +351,15 @@ export default function Popup() {
         </button>
       )}
       <div className="footer">
-        {/* Botón de Opciones eliminado — la selección se realiza inline aquí */}
+        <button
+          type="button"
+          className="options-btn"
+          onClick={() => {
+            chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }, () => {})
+          }}
+        >
+          Abrir opciones
+        </button>
       </div>
       <IntegrationGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>

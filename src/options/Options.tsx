@@ -11,6 +11,8 @@ declare const chrome: {
 }
 
 const NOTIFICATIONS_KEY = 'notifications_enabled'
+const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
+const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 
 type DbOption = { id: string; name: string }
 
@@ -20,14 +22,23 @@ export default function Options() {
   const [selectedDatabaseId, setSelectedDatabaseIdState] = useState<string>('')
   const [loadingDbs, setLoadingDbs] = useState(false)
   const [dbLoadMessage, setDbLoadMessage] = useState<string | null>(null)
+  const [oauthClientId, setOauthClientId] = useState('')
+  const [oauthProxyUrl, setOauthProxyUrl] = useState('')
+  const [oauthRedirectUri, setOauthRedirectUri] = useState('')
 
   useEffect(() => {
     chrome.storage.sync.get(
-      [NOTIFICATIONS_KEY],
+      [NOTIFICATIONS_KEY, OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY],
       (r) => {
         setNotificationsEnabled(r[NOTIFICATIONS_KEY] !== false)
+        setOauthClientId(String(r[OAUTH_CLIENT_ID_KEY] || ''))
+        setOauthProxyUrl(String(r[OAUTH_PROXY_URL_KEY] || ''))
       }
     )
+    chrome.runtime.sendMessage({ type: 'GET_OAUTH_REDIRECT_URI' }, (r: unknown) => {
+      const redirectUri = (r as { redirectUri?: string })?.redirectUri || ''
+      setOauthRedirectUri(redirectUri)
+    })
     chrome.runtime.sendMessage({ type: 'GET_SELECTED_DATABASE_ID' }, (r: unknown) => {
       const id = (r as { databaseId?: string | null })?.databaseId ?? ''
       setSelectedDatabaseIdState(id || '')
@@ -66,6 +77,18 @@ export default function Options() {
       { type: 'SET_SELECTED_DATABASE_ID', databaseId: value || null },
       () => {}
     )
+  }
+
+  const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setOauthClientId(value)
+    chrome.storage.sync.set({ [OAUTH_CLIENT_ID_KEY]: value.trim() })
+  }
+
+  const handleOAuthProxyUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value
+    setOauthProxyUrl(value)
+    chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: value.trim() })
   }
 
   return (
@@ -125,6 +148,43 @@ export default function Options() {
           onChange={handleToggle}
         />
         <label htmlFor="notifications">Mostrar notificación al guardar una página en Notion</label>
+      </div>
+      <div className="option-block">
+        <label className="option-label" htmlFor="oauth-client-id">
+          OAuth Client ID (Notion)
+        </label>
+        <input
+          id="oauth-client-id"
+          className="option-input"
+          type="text"
+          value={oauthClientId}
+          onChange={handleOAuthClientIdChange}
+          placeholder="Ej: 01234567-89ab-cdef-0123-456789abcdef"
+        />
+        <label className="option-label" htmlFor="oauth-proxy-url" style={{ marginTop: 10 }}>
+          URL del proxy OAuth
+        </label>
+        <input
+          id="oauth-proxy-url"
+          className="option-input"
+          type="url"
+          value={oauthProxyUrl}
+          onChange={handleOAuthProxyUrlChange}
+          placeholder="https://tu-proyecto.vercel.app/api/notion-token"
+        />
+        <label className="option-label" htmlFor="oauth-redirect-uri" style={{ marginTop: 10 }}>
+          Redirect URI para Notion
+        </label>
+        <input
+          id="oauth-redirect-uri"
+          className="option-input"
+          type="text"
+          value={oauthRedirectUri}
+          readOnly
+        />
+        <p className="option-hint">
+          Copia esta Redirect URI en tu integración Public de Notion y luego usa "Iniciar sesión con Notion" en el popup.
+        </p>
       </div>
     </div>
   )
