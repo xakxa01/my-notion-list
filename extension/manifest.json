@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Guardar en Notion",
+  "version": "1.0.0",
+  "description": "Guarda texto seleccionado como nueva página en tus bases de datos de Notion con template opcional.",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://api.notion.com/*"
+  ],
+  "icons": {
+    "16": "icon-16.svg",
+    "32": "icon-32.svg",
+    "48": "icon-48.svg"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Guardar en Notion",
+    "default_icons": {
+      "16": "icon-16.svg",
+      "32": "icon-32.svg",
+      "48": "icon-48.svg"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Conectando con Notion...</title>
+    <style>
+      body { font-family: system-ui; padding: 24px; text-align: center; }
+      .done { color: #2e7d32; }
+      .error { color: #c62828; }
+    </style>
+  </head>
+  <body>
+    <p id="msg">Conectando con Notion...</p>
+    <script>
+      (function () {
+        const params = new URLSearchParams(window.location.search)
+        const code = params.get('code')
+        const error = params.get('error')
+        const msg = document.getElementById('msg')
+        if (error) {
+          msg.textContent = 'Error de autorización: ' + error
+          msg.className = 'error'
+          return
+        }
+        if (!code) {
+          msg.textContent = 'No se recibió código. Cierra esta pestaña.'
+          msg.className = 'error'
+          return
+        }
+        if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+          chrome.runtime.sendMessage({ type: 'OAUTH_CODE', code: code }, function (r) {
+            if (r?.ok) {
+              msg.textContent = 'Conectado. Puedes cerrar esta pestaña.'
+              msg.className = 'done'
+            } else {
+              msg.textContent = r?.error || 'Error al guardar el token.'
+              msg.className = 'error'
+            }
+          })
+        } else {
+          msg.textContent = 'Ejecuta esto desde la extensión.'
+          msg.className = 'error'
+        }
+      })()
+    </script>
+  </body>
+</html>
