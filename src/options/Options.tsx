@@ -137,23 +137,27 @@ export default function Options() {
   }
 
   return (
-    <div>
-      <h1>Settings - My Notion List</h1>
+    <div className="min-w-[360px] p-4 font-sans text-[14px] text-zinc-900">
+      <h1 className="mb-4 text-[1.25rem] font-semibold">Settings - My Notion List</h1>
 
-      <div className="option-block">
-        <label className="option-label">Data source access</label>
-        <p className="option-hint">
+      <div className="mb-5">
+        <label className="mb-1.5 block font-medium">Data source access</label>
+        <p className="mt-1 text-xs text-zinc-500">
           Enable or disable which accessible data sources should be used in the extension.
         </p>
-        <div className="data-source-card">
-          <div className="data-source-header">
-            <span className="data-source-title">Detected data sources</span>
-            <span className="data-source-count">{databases.length}</span>
+
+        <div className="mt-2.5 rounded-[10px] border border-zinc-300 bg-white p-2.5">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[13px] font-semibold text-zinc-800">Detected data sources</span>
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-zinc-300 bg-zinc-50 text-xs text-zinc-700">
+              {databases.length}
+            </span>
           </div>
-          <div className="data-source-actions">
+
+          <div className="mb-1.5 flex items-center gap-2.5">
             <button
               type="button"
-              className="refresh-btn"
+              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={loadDataSources}
               disabled={loadingDbs || savingAccess}
             >
@@ -161,7 +165,7 @@ export default function Options() {
             </button>
             <button
               type="button"
-              className="refresh-btn"
+              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
               onClick={handleReconnectNotionAccess}
               disabled={loadingDbs || savingAccess || reconnectLoading || authMethod === 'token'}
               title={
@@ -172,23 +176,29 @@ export default function Options() {
             >
               {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
             </button>
-            {savingAccess && <span className="option-hint">Saving...</span>}
+            {savingAccess && <span className="text-xs text-zinc-500">Saving...</span>}
           </div>
+
           {(loadingDbs || dbLoadMessage || reconnectMessage) && (
-            <p className="option-hint data-source-message">
+            <p className="mb-2 text-xs text-zinc-500">
               {loadingDbs ? 'Checking access...' : reconnectMessage || dbLoadMessage}
             </p>
           )}
+
           {databases.length > 0 && (
-            <ul className="data-source-list">
+            <ul className="m-0 flex max-h-[180px] list-none flex-col gap-1.5 overflow-auto p-0">
               {databases.map((db) => (
-                <li key={db.id} className="data-source-item">
-                  <label className="data-source-item-label">
+                <li
+                  key={db.id}
+                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[14px] text-zinc-900"
+                >
+                  <label className="flex cursor-pointer items-center gap-2.5">
                     <input
                       type="checkbox"
                       checked={activeIds.includes(db.id)}
                       onChange={(e) => handleToggleDataSource(db.id, e.target.checked)}
                       disabled={savingAccess}
+                      className="m-0 h-4 w-4 cursor-pointer"
                     />
                     <span>{db.name}</span>
                   </label>
@@ -199,38 +209,41 @@ export default function Options() {
         </div>
       </div>
 
-      <details className="option-block">
-        <summary className="option-label" style={{ cursor: 'pointer' }}>
+      <details className="mb-5">
+        <summary className="mb-1.5 cursor-pointer font-medium">
           Advanced configuration (OAuth)
         </summary>
-        <label className="option-label" htmlFor="oauth-client-id" style={{ marginTop: 10 }}>
+
+        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-client-id">
           OAuth Client ID (Notion)
         </label>
         <input
           id="oauth-client-id"
-          className="option-input"
+          className="mb-1.5 w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
           type="text"
           value={oauthClientId}
           onChange={handleOAuthClientIdChange}
           placeholder="Example: 01234567-89ab-cdef-0123-456789abcdef"
         />
-        <label className="option-label" htmlFor="oauth-proxy-url" style={{ marginTop: 10 }}>
+
+        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-proxy-url">
           OAuth proxy URL
         </label>
         <input
           id="oauth-proxy-url"
-          className="option-input"
+          className="mb-1.5 w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
           type="url"
           value={oauthProxyUrl}
           onChange={handleOAuthProxyUrlChange}
           placeholder="https://your-project.vercel.app/api/notion-token"
         />
-        <label className="option-label" htmlFor="oauth-redirect-uri" style={{ marginTop: 10 }}>
+
+        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-redirect-uri">
           Redirect URI for Notion
         </label>
         <input
           id="oauth-redirect-uri"
-          className="option-input"
+          className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
           type="text"
           value={oauthRedirectUri}
           readOnly
