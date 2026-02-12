@@ -23,6 +23,8 @@ export default function Options() {
   const [loadingDbs, setLoadingDbs] = useState(false)
   const [dbLoadMessage, setDbLoadMessage] = useState<string | null>(null)
   const [savingAccess, setSavingAccess] = useState(false)
+  const [reconnectLoading, setReconnectLoading] = useState(false)
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null)
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
@@ -38,11 +40,7 @@ export default function Options() {
       const activeSet = new Set(rawActive.length > 0 ? rawActive : list.map((db) => db.id))
       setDatabases(list)
       setActiveIds(list.map((db) => db.id).filter((id) => activeSet.has(id)))
-      setDbLoadMessage(
-        list.length === 0
-          ? 'No accessible data sources were found for this account/token.'
-          : `${list.length} accessible data source${list.length === 1 ? '' : 's'} detected.`
-      )
+      setDbLoadMessage(list.length === 0 ? 'No accessible data sources were found for this account/token.' : null)
     })
   }
 
@@ -83,6 +81,21 @@ export default function Options() {
     })
   }
 
+  const handleReconnectNotionAccess = () => {
+    setReconnectLoading(true)
+    setReconnectMessage(null)
+    chrome.runtime.sendMessage({ type: 'START_OAUTH' }, (r: unknown) => {
+      setReconnectLoading(false)
+      if ((r as { ok?: boolean })?.ok) {
+        setReconnectMessage('Access updated.')
+        loadDataSources()
+      } else {
+        const error = (r as { error?: string })?.error
+        setReconnectMessage(error || 'Could not update access.')
+      }
+    })
+  }
+
   return (
     <div>
       <h1>Settings - My Notion List</h1>
@@ -101,9 +114,21 @@ export default function Options() {
             <button type="button" className="refresh-btn" onClick={loadDataSources} disabled={loadingDbs || savingAccess}>
               {loadingDbs ? 'Refreshing...' : 'Refresh accessible list'}
             </button>
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={handleReconnectNotionAccess}
+              disabled={loadingDbs || savingAccess || reconnectLoading}
+            >
+              {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
+            </button>
             {savingAccess && <span className="option-hint">Saving...</span>}
           </div>
-          <p className="option-hint data-source-message">{loadingDbs ? 'Checking access...' : dbLoadMessage}</p>
+          {(loadingDbs || dbLoadMessage || reconnectMessage) && (
+            <p className="option-hint data-source-message">
+              {loadingDbs ? 'Checking access...' : reconnectMessage || dbLoadMessage}
+            </p>
+          )}
           {databases.length > 0 && (
             <ul className="data-source-list">
               {databases.map((db) => (
