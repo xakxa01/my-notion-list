@@ -152,7 +152,6 @@ export default function Popup() {
           const t = (tokenRes as { token?: string | null })?.token ?? null
           setTokenState(t)
           if (t) setInputToken(t)
-          setMessage('Signed in with Notion.')
           setTimeout(() => loadDataSources(true, t), 200)
         })
       } else {
