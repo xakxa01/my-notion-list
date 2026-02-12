@@ -22,18 +22,23 @@ function setSecurityHeaders(res) {
 
 function getClientIp(req) {
   const xff = req.headers['x-forwarded-for']
+
   if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim()
+
   return req.socket?.remoteAddress || 'unknown'
 }
 
 function isRateLimited(ip) {
   const now = Date.now()
   const current = globalRateState.get(ip)
+
   if (!current || now > current.resetAt) {
     globalRateState.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
     return false
   }
+
   current.count += 1
+
   return current.count > RATE_LIMIT_MAX_REQUESTS
 }
 
@@ -55,9 +60,9 @@ function getAllowedRedirectUris() {
 function isSafeRedirectUri(redirectUri, allowedRedirectUris) {
   try {
     const parsed = new URL(redirectUri)
+
     if (parsed.protocol !== 'https:') return false
-    if (allowedRedirectUris.size > 0) return allowedRedirectUris.has(redirectUri)
-    return /^[a-z0-9]{32}\.chromiumapp\.org$/i.test(parsed.hostname)
+    return allowedRedirectUris.has(redirectUri)
   } catch {
     return false
   }
@@ -88,12 +93,17 @@ export default async function handler(req, res) {
     res.status(400).json({ error: 'Invalid request body.' })
     return
   }
+
   if (code.length < 8 || code.length > 1024) {
     res.status(400).json({ error: 'Invalid authorization code.' })
     return
   }
 
   const allowedRedirectUris = getAllowedRedirectUris()
+  if (allowedRedirectUris.size === 0) {
+    res.status(500).json({ error: 'OAuth redirect allowlist is not configured.' })
+    return
+  }
   if (!isSafeRedirectUri(redirect_uri, allowedRedirectUris)) {
     res.status(400).json({ error: 'Redirect URI not allowed.' })
     return

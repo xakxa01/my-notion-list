@@ -4,8 +4,12 @@ declare const chrome: {
   runtime: { sendMessage: (msg: unknown, cb: (r: unknown) => void) => void }
   storage: {
     onChanged?: {
-      addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
-      removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
+      addListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
+      removeListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
     }
     sync: {
       get: (keys: string[], cb: (r: Record<string, unknown>) => void) => void
@@ -42,11 +46,16 @@ export default function Options() {
       setLoadingDbs(false)
       const raw = (r as { databases?: DbOption[] })?.databases ?? []
       const list = Array.from(new Map(raw.map((db) => [db.id, db])).values())
-      const rawActive = (r as { activeIds?: string[] })?.activeIds ?? []
-      const activeSet = new Set(rawActive.length > 0 ? rawActive : list.map((db) => db.id))
+      const hasExplicitActiveIds = Array.isArray((r as { activeIds?: unknown }).activeIds)
+      const rawActive = hasExplicitActiveIds
+        ? ((r as { activeIds?: string[] }).activeIds ?? [])
+        : list.map((db) => db.id)
+      const activeSet = new Set(rawActive)
       setDatabases(list)
       setActiveIds(list.map((db) => db.id).filter((id) => activeSet.has(id)))
-      setDbLoadMessage(list.length === 0 ? 'No accessible data sources were found for this account/token.' : null)
+      setDbLoadMessage(
+        list.length === 0 ? 'No accessible data sources were found for this account/token.' : null
+      )
     })
   }
 
@@ -66,7 +75,10 @@ export default function Options() {
     })
     loadDataSources()
 
-    const handleStorageChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+    const handleStorageChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string
+    ) => {
       if (areaName !== 'local') return
       if (changes['notion_token']) {
         const nextValue = changes['notion_token'].newValue
@@ -76,7 +88,9 @@ export default function Options() {
       }
       if (changes['notion_auth_method']) {
         const nextMethod = String(changes['notion_auth_method'].newValue || '')
-        setAuthMethod(nextMethod === 'token' || nextMethod === 'oauth' ? (nextMethod as AuthMethod) : '')
+        setAuthMethod(
+          nextMethod === 'token' || nextMethod === 'oauth' ? (nextMethod as AuthMethod) : ''
+        )
       }
     }
     chrome.storage.onChanged?.addListener(handleStorageChanged)
@@ -137,7 +151,12 @@ export default function Options() {
             <span className="data-source-count">{databases.length}</span>
           </div>
           <div className="data-source-actions">
-            <button type="button" className="refresh-btn" onClick={loadDataSources} disabled={loadingDbs || savingAccess}>
+            <button
+              type="button"
+              className="refresh-btn"
+              onClick={loadDataSources}
+              disabled={loadingDbs || savingAccess}
+            >
               {loadingDbs ? 'Refreshing...' : 'Refresh accessible list'}
             </button>
             <button
@@ -145,7 +164,11 @@ export default function Options() {
               className="refresh-btn"
               onClick={handleReconnectNotionAccess}
               disabled={loadingDbs || savingAccess || reconnectLoading || authMethod === 'token'}
-              title={authMethod === 'token' ? 'Available only when signed in with Notion OAuth.' : undefined}
+              title={
+                authMethod === 'token'
+                  ? 'Available only when signed in with Notion OAuth.'
+                  : undefined
+              }
             >
               {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
             </button>
@@ -205,7 +228,13 @@ export default function Options() {
         <label className="option-label" htmlFor="oauth-redirect-uri" style={{ marginTop: 10 }}>
           Redirect URI for Notion
         </label>
-        <input id="oauth-redirect-uri" className="option-input" type="text" value={oauthRedirectUri} readOnly />
+        <input
+          id="oauth-redirect-uri"
+          className="option-input"
+          type="text"
+          value={oauthRedirectUri}
+          readOnly
+        />
       </details>
     </div>
   )
