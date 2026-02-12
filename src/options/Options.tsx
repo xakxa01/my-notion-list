@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react'
 declare const chrome: {
   runtime: { sendMessage: (msg: unknown, cb: (r: unknown) => void) => void }
   storage: {
+    onChanged?: {
+      addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
+      removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
+    }
     sync: {
       get: (keys: string[], cb: (r: Record<string, unknown>) => void) => void
       set: (items: Record<string, unknown>, cb?: () => void) => void
@@ -55,6 +59,16 @@ export default function Options() {
       setOauthRedirectUri(redirectUri)
     })
     loadDataSources()
+
+    const handleStorageChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+      if (areaName !== 'local' || !changes['notion_token']) return
+      const nextValue = changes['notion_token'].newValue
+      if (!nextValue) {
+        window.close()
+      }
+    }
+    chrome.storage.onChanged?.addListener(handleStorageChanged)
+    return () => chrome.storage.onChanged?.removeListener(handleStorageChanged)
   }, [])
 
   const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
