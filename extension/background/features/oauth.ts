@@ -1,6 +1,4 @@
-import {
-  TRUSTED_OAUTH_PROXY_ORIGINS,
-} from '../shared/constants'
+import { TRUSTED_OAUTH_PROXY_ORIGINS } from '../shared/constants'
 
 type OAuthConfig = { clientId: string; proxyUrl: string }
 
@@ -37,9 +35,12 @@ async function exchangeOAuthCode(code: string, deps: OAuthDeps): Promise<void> {
       redirect_uri: redirectUri,
     }),
   })
+
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
+
   if (!res.ok) throw new Error(data.error || 'OAuth exchange failed.')
   if (!data.access_token) throw new Error('OAuth proxy did not return access_token.')
+
   await deps.setToken(data.access_token)
   await deps.setAuthMethod('oauth')
   await deps.refreshContextMenu()
@@ -52,6 +53,7 @@ export async function startOAuthSignInFlow(deps: OAuthDeps): Promise<void> {
   const redirectUri = deps.getOAuthRedirectUri()
   const state = Math.random().toString(36).slice(2)
   const authUrl = new URL('https://api.notion.com/v1/oauth/authorize')
+
   authUrl.searchParams.set('owner', 'user')
   authUrl.searchParams.set('client_id', clientId)
   authUrl.searchParams.set('redirect_uri', redirectUri)
@@ -59,28 +61,28 @@ export async function startOAuthSignInFlow(deps: OAuthDeps): Promise<void> {
   authUrl.searchParams.set('state', state)
 
   const responseUrl = await new Promise<string>((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow(
-      { url: authUrl.toString(), interactive: true },
-      (url) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || 'OAuth was canceled or blocked.'))
-          return
-        }
-        if (!url) {
-          reject(new Error('No OAuth callback URL was received.'))
-          return
-        }
-        resolve(url)
+    chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (url) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message || 'OAuth was canceled or blocked.'))
+        return
       }
-    )
+      if (!url) {
+        reject(new Error('No OAuth callback URL was received.'))
+        return
+      }
+      resolve(url)
+    })
   })
 
   const parsed = new URL(responseUrl)
   const returnedState = parsed.searchParams.get('state')
+
   if (!returnedState || returnedState !== state) throw new Error('Invalid OAuth state.')
   const oauthError = parsed.searchParams.get('error')
+
   if (oauthError) throw new Error(`Notion OAuth error: ${oauthError}`)
   const code = parsed.searchParams.get('code')
+
   if (!code) throw new Error('No authorization code was received.')
 
   await exchangeOAuthCode(code, deps)
