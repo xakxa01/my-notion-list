@@ -54,8 +54,9 @@ export default function Popup() {
     })
   }, [])
 
-  const loadDataSources = (forceRefresh = false) => {
-    if (!token) {
+  const loadDataSources = (forceRefresh = false, tokenOverride?: string | null) => {
+    const effectiveToken = tokenOverride ?? token
+    if (!effectiveToken) {
       setDataSources([])
       setTemplatesOrder([])
       setSyncingNow(false)
@@ -63,7 +64,7 @@ export default function Popup() {
     }
 
     setLoadingSources(true)
-    chrome.runtime.sendMessage({ type: 'GET_ALL_DATABASE_INFOS', forceRefresh }, (r: unknown) => {
+    chrome.runtime.sendMessage({ type: 'GET_ALL_DATABASE_INFOS', forceRefresh, token: effectiveToken }, (r: unknown) => {
       const raw = (r as { databases?: DataSourceInfo[] })?.databases ?? []
       setDataSources(raw)
       setCurrentIndex((prev) => Math.min(prev, Math.max(0, raw.length - 1)))
@@ -75,6 +76,12 @@ export default function Popup() {
   useEffect(() => {
     loadDataSources()
   }, [token])
+
+  useEffect(() => {
+    if (!message) return
+    const timeoutId = window.setTimeout(() => setMessage(null), 2600)
+    return () => window.clearTimeout(timeoutId)
+  }, [message])
 
   useEffect(() => {
     if (!currentDataSource?.id) {
@@ -114,7 +121,7 @@ export default function Popup() {
       if (res?.ok) {
         setTokenState(value || null)
         setMessage(value ? 'Token saved.' : 'Signed out.')
-        setTimeout(() => loadDataSources(true), 200)
+        setTimeout(() => loadDataSources(true, value || null), 200)
       } else {
         setMessage('Error while saving token.')
       }
@@ -146,7 +153,7 @@ export default function Popup() {
           setTokenState(t)
           if (t) setInputToken(t)
           setMessage('Signed in with Notion.')
-          setTimeout(() => loadDataSources(true), 200)
+          setTimeout(() => loadDataSources(true, t), 200)
         })
       } else {
         setMessage(res?.error || 'Could not sign in with Notion.')
