@@ -1,59 +1,87 @@
-# Guardar en Notion (Chrome Extension)
+# My Notion List (Browser Extension)
 
-Extensión para Chrome que permite guardar texto seleccionado como nueva página en tu base de datos de Notion, con plantilla opcional y notificaciones configurables.
+My Notion List lets you save selected text from any page into Notion using your accessible data sources and templates.
 
-## Cómo usar
+## Features
 
-1. **Instalar la extensión** (carga desempaquetada):
-   - Ejecuta `npm run build`.
-   - Abre Chrome → `chrome://extensions/` → Activa "Modo desarrollador" → "Cargar descomprimida" → selecciona la carpeta **`dist`** del proyecto.
+- Save selected text to Notion from the context menu.
+- Works with:
+  - Notion OAuth (`Sign in with Notion`)
+  - Internal integration token (`ntn_...`)
+- Multi-data-source support (no hard limit).
+- Data sources loaded automatically from your account/token access.
+- Reorder data sources and templates with drag and drop.
+- Fast loading with cache and manual refresh.
+- Per-data-source enable/disable toggles in Settings.
 
-2. **Conectar Notion**:
-   - En el popup, haz clic en **"Iniciar sesión con Notion"** (en la pantalla de Notion puedes usar "Continuar con Google" si tu workspace lo tiene).
-   - O usa **"Usar token manual"** y pega el token de una integración Internal de Notion.
-   - Abre **Opciones** (botón "Abrir opciones") y elige la **base de datos** donde quieres guardar el texto.
+## Install (Unpacked)
 
-3. **Guardar texto**:
-   - Selecciona texto en cualquier página.
-   - Clic derecho → **Guardar '[texto]' en Notion** → elige plantilla (Sin template, Por defecto, o una con nombre).
-   - Se crea una página en la base de datos elegida con el texto como título y la plantilla aplicada.
+1. Run:
+   - `npm run build`
+2. Open your browser extensions page.
+3. Enable developer mode.
+4. Load unpacked extension from the `dist/` folder.
 
-4. **Opciones**:
-   - **Base de datos de Notion**: la única base donde se guardará el texto (obligatorio para usar el menú).
-   - **Mostrar notificación al guardar**: activa o desactiva la notificación de confirmación.
-   - **OAuth**: Client ID (Notion) y URL del proxy OAuth para "Iniciar sesión con Notion".
+## How To Use
 
-## OAuth (Iniciar sesión con Notion / Google)
+1. Open the popup.
+2. Connect Notion using either:
+   - `Sign in with` (OAuth)
+   - `Connect with token` (Internal integration token)
+3. Select text on any webpage.
+4. Right click and choose `Save '<label>' to Notion`.
+5. Pick a template from the submenu.
 
-Para usar **"Iniciar sesión con Notion"** (y en la pantalla de Notion usar "Continuar con Google"):
+## Data Sources Behavior
 
-1. Crea una integración **Public** en [Notion → My integrations](https://www.notion.so/my-integrations).
-2. En OAuth Domain & URIs, añade como Redirect URI la que devuelve Chrome (en Opciones de la extensión se puede mostrar; es de la forma `https://<id>.chromiumapp.org/`). Obtén tu ID de extensión en `chrome://extensions` y la URL será `https://<extension-id>.chromiumapp.org/`.
-3. Despliega el backend incluido en el repo:
-   - La carpeta `api/` contiene una función serverless para Vercel (`api/notion-token.js`).
-   - Despliega en [Vercel](https://vercel.com) y configura las variables de entorno:
-     - `NOTION_CLIENT_ID`
-     - `NOTION_CLIENT_SECRET`
-     - `CHROME_EXTENSION_IDS` (recomendado, IDs separados por coma; ej: `dpjjieemffikjalblibpjlfgodbkjabb`)
-     - `NOTION_ALLOWED_REDIRECT_URIS` (opcional, URIs exactas separadas por coma)
-   - La URL será algo como `https://tu-proyecto.vercel.app/api/notion-token`.
-4. En **Opciones** de la extensión, rellena **Client ID (Notion)** con el Client ID de tu integración y **URL del proxy OAuth** con la URL de tu función (ej. `https://tu-proyecto.vercel.app/api/notion-token`).
-5. En el popup, haz clic en **"Iniciar sesión con Notion"**; se abrirá Notion, podrás iniciar sesión (incl. con Google) y autorizar la integración.
+- Accessible data sources are discovered automatically.
+- In popup:
+  - Use arrows to switch data source (when more than one is active).
+  - Use refresh icon to force sync.
+- In Settings:
+  - Enable/disable each detected data source with checkboxes.
+  - By default, all detected data sources are checked.
+  - Disabling a data source hides it from popup/context menu and clears its cache.
 
-Sin OAuth, usa una integración **Internal** y **"Usar token manual"** en el popup.
+## Settings
 
-## Guía paso a paso en la extensión
+### Data source access
 
-En el popup, el enlace **"¿Cómo configuro la integración?"** abre un modal con los pasos para crear la integración en Notion, conectar con token o OAuth, y elegir la base de datos en Opciones.
+- `Refresh accessible list`: refresh list of accessible data sources.
+- `Reconnect Notion access`: reopen OAuth permission flow to grant/review access.
+  - This is available for OAuth sessions.
+  - For manual token sessions, this action is disabled.
 
-## Desarrollo
+### Advanced configuration (OAuth)
 
-- `npm run build`: genera la extensión en `dist/` (popup, options, background, manifest, callback).
-- Carga `dist/` como extensión descomprimida en Chrome para probar.
+- OAuth Client ID
+- OAuth proxy URL
+- Redirect URI (read-only)
 
-## Permisos
+## OAuth Proxy (Vercel)
 
-- **contextMenus**: menú al hacer clic derecho sobre texto seleccionado.
-- **storage**: token, base de datos elegida y preferencias.
-- **identity**, **notifications**: OAuth y notificaciones de confirmación.
-- **host_permissions** para `api.notion.com`: llamadas a la API de Notion.
+This repo includes `api/notion-token.js` for token exchange.
+
+Set these environment variables in your deployment:
+
+- `NOTION_CLIENT_ID`
+- `NOTION_CLIENT_SECRET`
+- `CHROME_EXTENSION_IDS` (recommended, comma-separated)
+- `NOTION_ALLOWED_REDIRECT_URIS` (optional, comma-separated)
+
+Example endpoint:
+
+- `https://your-project.vercel.app/api/notion-token`
+
+## Development
+
+- `npm run build`: build extension into `dist/`.
+- `npm run dev`: run Vite dev server for UI work.
+
+## Permissions
+
+- `contextMenus`: context menu actions for selected text.
+- `storage`: token, ordering, and settings.
+- `identity`: OAuth flow.
+- `notifications`: save status notifications.
+- Host permissions for Notion API and OAuth proxy.
