@@ -19,8 +19,6 @@ const ROOT_MENU_BASE_TITLE = 'Save to Notion'
 
 // Storage Keys
 const SELECTED_DB_CACHE_KEY_PREFIX = 'notion_selected_db_cache_'
-const SELECTED_DB_STORAGE_KEY = 'notion_selected_database_id'
-const SELECTED_DB_STORAGE_IDS_KEY = 'notion_selected_database_ids'
 const DATA_SOURCE_ORDER_KEY = 'notion_data_source_order'
 const ACTIVE_DATA_SOURCE_IDS_KEY = 'notion_active_data_source_ids'
 const ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY = 'notion_active_data_source_selection_configured'
@@ -204,46 +202,6 @@ async function getOrderedDataSourceIds(token: string, forceRefresh = false): Pro
   const activeIds = await getActiveDataSourceIds(sorted)
   const activeSet = new Set(activeIds)
   return sorted.filter((id) => activeSet.has(id))
-}
-
-function getSelectedDatabaseId(): Promise<string | null> {
-  return new Promise((resolve) => {
-    getToken()
-      .then((token) => {
-        if (!token) return resolve(null)
-        return getOrderedDataSourceIds(token, false).then((ids) => resolve(ids[0] || null))
-      })
-      .catch(() => resolve(null))
-  })
-}
-
-function getSelectedDatabaseIds(): Promise<string[]> {
-  return new Promise((resolve) => {
-    getToken()
-      .then((token) => {
-        if (!token) return resolve([])
-        return getOrderedDataSourceIds(token, false).then((ids) => resolve(ids))
-      })
-      .catch(() => resolve([]))
-  })
-}
-
-function setSelectedDatabaseId(id: string | null): Promise<void> {
-  return setSelectedDatabaseIds(id ? [id] : [])
-}
-
-function setSelectedDatabaseIds(ids: string[]): Promise<void> {
-  const normalized = normalizeDatabaseIds(ids)
-  const primaryId = normalized[0] || ''
-  return new Promise((resolve) => {
-    chrome.storage.sync.set(
-      {
-        [SELECTED_DB_STORAGE_IDS_KEY]: normalized,
-        [SELECTED_DB_STORAGE_KEY]: primaryId,
-      },
-      () => resolve()
-    )
-  })
 }
 
 function getOAuthConfig(): Promise<{ clientId: string; proxyUrl: string }> {
@@ -858,7 +816,7 @@ async function refreshContextMenu(): Promise<void> {
   await clearContextMenu()
   const token = await getToken()
   if (!token) return
-  const selectedIds = await getSelectedDatabaseIds()
+  const selectedIds = await getOrderedDataSourceIds(token, false)
   if (selectedIds.length === 0) {
     try {
       await buildContextMenuNoDb()
@@ -970,9 +928,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === 'local' && changes.notion_token) refreshContextMenu()
   if (
     areaName === 'sync' &&
-    (changes[SELECTED_DB_STORAGE_KEY] ||
-      changes[SELECTED_DB_STORAGE_IDS_KEY] ||
-      changes[DATA_SOURCE_ORDER_KEY] ||
+    (changes[DATA_SOURCE_ORDER_KEY] ||
       changes[ACTIVE_DATA_SOURCE_IDS_KEY])
   ) refreshContextMenu()
 })
@@ -1008,10 +964,6 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
           : 'Could not sign in to Notion. Check OAuth configuration.'
         sendResponse({ ok: false, error: errorMessage })
       })
-    return true
-  }
-  if (msg.type === 'REFRESH_MENU') {
-    refreshContextMenu().then(() => sendResponse({ ok: true }))
     return true
   }
   if (msg.type === 'HARD_SYNC') {
@@ -1076,18 +1028,6 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
       .catch(() => sendResponse({ ok: false }))
     return true
   }
-  if (msg.type === 'GET_SELECTED_DATABASE_ID') {
-    getSelectedDatabaseId().then((id) => sendResponse({ databaseId: id }))
-    return true
-  }
-  if (msg.type === 'GET_SELECTED_DATABASE_IDS') {
-    getSelectedDatabaseIds().then((ids) => sendResponse({ databaseIds: ids }))
-    return true
-  }
-  if (msg.type === 'GET_DATA_SOURCE_ORDER') {
-    getDataSourceOrder().then((order) => sendResponse({ order }))
-    return true
-  }
   if (msg.type === 'SET_DATA_SOURCE_ORDER' && Array.isArray((msg as unknown as { order?: unknown[] }).order)) {
     const order = normalizeDatabaseIds((msg as unknown as { order: string[] }).order)
     setDataSourceOrder(order).then(() => {
@@ -1104,36 +1044,6 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
         return getAllDatabaseInfos(token, forceRefresh).then((databases) => sendResponse({ databases }))
       })
       .catch(() => sendResponse({ databases: [] }))
-    return true
-  }
-  if (msg.type === 'GET_SELECTED_DATABASE_INFO') {
-    getToken()
-      .then((token) => {
-        if (!token) return sendResponse({ database: null })
-        return getSelectedDatabaseIds().then((ids) => {
-          const dbId = ids[0] || null
-          if (!dbId) return sendResponse({ database: null })
-          const forceRefresh = Boolean((msg as unknown as { forceRefresh?: boolean }).forceRefresh)
-          return getDatabaseInfo(token, dbId, forceRefresh).then((info) => sendResponse({ database: info }))
-        })
-      })
-      .catch(() => sendResponse({ database: null }))
-    return true
-  }
-  if (msg.type === 'SET_SELECTED_DATABASE_ID' && typeof (msg as unknown as { databaseId?: string }).databaseId !== 'undefined') {
-    const id = ((msg as unknown) as { databaseId: string | null }).databaseId
-    setSelectedDatabaseId(id).then(() => {
-      refreshContextMenu()
-      sendResponse({ ok: true })
-    })
-    return true
-  }
-  if (msg.type === 'SET_SELECTED_DATABASE_IDS' && Array.isArray((msg as unknown as { databaseIds?: unknown[] }).databaseIds)) {
-    const ids = ((msg as unknown) as { databaseIds: string[] }).databaseIds
-    Promise.all([setSelectedDatabaseIds(ids), setDataSourceOrder(ids)]).then(() => {
-      refreshContextMenu()
-      sendResponse({ ok: true })
-    })
     return true
   }
   if (msg.type === 'SET_TEMPLATE_ORDER' && (msg as unknown as { databaseId?: string; order?: string[] }).databaseId) {
