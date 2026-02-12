@@ -1,52 +1,34 @@
 /// <reference types="chrome" />
+import {
+  ACTIVE_DATA_SOURCE_IDS_KEY,
+  ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY,
+  AUTH_METHOD_KEY,
+  CACHE_TTL_MS,
+  DATA_SOURCES_CACHE_TTL_MS,
+  DATA_SOURCES_LIST_CACHE_KEY,
+  DATA_SOURCE_ORDER_KEY,
+  DEFAULT_OAUTH_CLIENT_ID,
+  DEFAULT_OAUTH_PROXY_URL,
+  MENU_ID_PREFIX,
+  MENU_SEPARATOR,
+  NOTION_API,
+  NOTION_VERSION,
+  OAUTH_CLIENT_ID_KEY,
+  OAUTH_PROXY_URL_KEY,
+  ROOT_MENU_BASE_TITLE,
+  ROOT_MENU_ID,
+  SELECTED_DB_CACHE_KEY_PREFIX,
+  TEMPLATE_ORDER_KEY,
+  TRUSTED_OAUTH_PROXY_ORIGINS,
+} from './background/shared/constants'
+import { normalizeDatabaseIds, sortIdsByOrder } from './background/shared/ids'
+import { truncateLabel, getTemplateMenuTitle } from './background/shared/menu'
+import { getTitleFromResult, parseNotionIcon } from './background/shared/notion-parsers'
+import type { CachedSelectedDb, NotionIcon } from './background/shared/types'
 /**
  * Service Worker: Handles OAuth, Notion API communication, context menu management,
  * and page creation for the browser extension.
  */
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const NOTION_VERSION = '2025-09-03'
-const NOTION_API = 'https://api.notion.com'
-
-// Context Menu
-const ROOT_MENU_ID = 'notion-save-root'
-const MENU_ID_PREFIX = 'notion_tpl_'
-const MENU_SEPARATOR = '::'
-const ROOT_MENU_BASE_TITLE = 'Save to Notion'
-
-// Storage Keys
-const SELECTED_DB_CACHE_KEY_PREFIX = 'notion_selected_db_cache_'
-const DATA_SOURCE_ORDER_KEY = 'notion_data_source_order'
-const ACTIVE_DATA_SOURCE_IDS_KEY = 'notion_active_data_source_ids'
-const ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY = 'notion_active_data_source_selection_configured'
-const TEMPLATE_ORDER_KEY = 'notion_template_order'
-const DATA_SOURCES_LIST_CACHE_KEY = 'notion_data_sources_list_cache'
-const AUTH_METHOD_KEY = 'notion_auth_method'
-const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
-const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
-const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
-const DATA_SOURCES_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
-const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
-const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
-const TRUSTED_OAUTH_PROXY_ORIGINS = [new URL(DEFAULT_OAUTH_PROXY_URL).origin, 'http://localhost:3000', 'http://localhost:5173']
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-type CachedSelectedDb = {
-  id: string
-  dataSourceId: string
-  name: string
-  icon: NotionIcon
-  titlePropertyKey: string
-  templates: Array<{ id: string; name: string; icon?: NotionIcon }>
-}
-
-type NotionIcon = { type: 'emoji'; emoji: string } | { type: 'file'; file: { url: string } } | null
 
 // ============================================================================
 // STORAGE HELPERS
@@ -102,22 +84,6 @@ async function clearSelectedDbCaches(ids: string[]): Promise<void> {
   const keysToRemove = normalized.map((id) => `${SELECTED_DB_CACHE_KEY_PREFIX}${id}`)
   await new Promise<void>((resolve) => {
     chrome.storage.local.remove(keysToRemove, () => resolve())
-  })
-}
-
-function normalizeDatabaseIds(ids: unknown): string[] {
-  if (!Array.isArray(ids)) return []
-  const unique = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)))
-  return unique
-}
-
-function sortIdsByOrder(ids: string[], order: string[]): string[] {
-  const rank = new Map(order.map((id, index) => [id, index]))
-  return [...ids].sort((a, b) => {
-    const ra = rank.has(a) ? (rank.get(a) as number) : Number.MAX_SAFE_INTEGER
-    const rb = rank.has(b) ? (rank.get(b) as number) : Number.MAX_SAFE_INTEGER
-    if (ra !== rb) return ra - rb
-    return 0
   })
 }
 
@@ -314,53 +280,6 @@ async function notionFetch(
       ...(options.headers as Record<string, string>),
     },
   })
-}
-
-function getTitleFromResult(result: Record<string, unknown>): string {
-  if (result.title && Array.isArray(result.title)) {
-    return (result.title as Array<{ plain_text?: string }>)
-      .map((t) => t.plain_text ?? '')
-      .join('')
-      .trim()
-  }
-  const props = result.properties as Record<string, { type?: string; title?: Array<{ plain_text?: string }> }> | undefined
-  if (props) {
-    for (const p of Object.values(props)) {
-      if (p?.type === 'title' && Array.isArray(p.title)) {
-        return (p.title as Array<{ plain_text?: string }>)
-          .map((t) => t.plain_text ?? '')
-          .join('')
-          .trim()
-      }
-    }
-  }
-  return 'Untitled'
-}
-
-function parseNotionIcon(raw: unknown): NotionIcon {
-  if (!raw || typeof raw !== 'object') return null
-  const icon = raw as Record<string, unknown>
-  if (icon.type === 'emoji' && icon.emoji) {
-    return { type: 'emoji', emoji: String(icon.emoji) }
-  }
-  if (icon.type === 'file' && icon.file && typeof icon.file === 'object') {
-    const url = (icon.file as Record<string, unknown>).url
-    if (url) return { type: 'file', file: { url: String(url) } }
-  }
-  if (icon.type === 'external' && icon.external && typeof icon.external === 'object') {
-    const url = (icon.external as Record<string, unknown>).url
-    if (url) return { type: 'file', file: { url: String(url) } }
-  }
-  if (icon.type === 'custom_emoji' && icon.custom_emoji && typeof icon.custom_emoji === 'object') {
-    const url = (icon.custom_emoji as Record<string, unknown>).url
-    if (url) return { type: 'file', file: { url: String(url) } }
-  }
-  return null
-}
-
-function getTemplateMenuTitle(template: { name: string; icon?: NotionIcon }): string {
-  if (template.icon?.type === 'emoji') return `${template.icon.emoji} ${template.name}`
-  return `📄 ${template.name}`
 }
 
 // ============================================================================
@@ -737,12 +656,6 @@ function createMenuItem(createProperties: chrome.contextMenus.CreateProperties):
 
 function getTemplateMenuId(databaseId: string, templateId: string): string {
   return `${MENU_ID_PREFIX}${databaseId}${MENU_SEPARATOR}${templateId}`
-}
-
-function truncateLabel(text: string, maxChars = 20): string {
-  const normalized = text.trim().replace(/\s+/g, ' ')
-  if (normalized.length <= maxChars) return normalized
-  return `${normalized.slice(0, maxChars)}...`
 }
 
 function parseTemplateFromMenuId(menuItemId: string): { databaseId: string; templateId: string } | null {
