@@ -1,7 +1,7 @@
 /// <reference types="chrome" />
 /**
  * Service Worker: Handles OAuth, Notion API communication, context menu management,
- * page creation, and notifications for the browser extension.
+ * and page creation for the browser extension.
  */
 
 // ============================================================================
@@ -104,14 +104,6 @@ async function clearSelectedDbCaches(ids: string[]): Promise<void> {
   const keysToRemove = normalized.map((id) => `${SELECTED_DB_CACHE_KEY_PREFIX}${id}`)
   await new Promise<void>((resolve) => {
     chrome.storage.local.remove(keysToRemove, () => resolve())
-  })
-}
-
-function getNotificationsEnabled(): Promise<boolean> {
-  return new Promise((resolve) => {
-    chrome.storage.sync.get(['notifications_enabled'], (r) => {
-      resolve(r.notifications_enabled !== false)
-    })
   })
 }
 
@@ -959,25 +951,9 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
         selectionText,
         parsedTemplate.templateId
       )
-      const showNotif = await getNotificationsEnabled()
-      if (showNotif && chrome.notifications) {
-        chrome.notifications.create(`notion-save-${Date.now()}`, {
-          type: 'basic',
-          iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDAwIi8+Cjwvc3ZnPg==',
-          title: 'Saved to Notion',
-          message: `Page created: "${selectionText.slice(0, 50)}${selectionText.length > 50 ? '…' : ''}"`,
-        })
-      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (chrome.notifications) {
-        chrome.notifications.create({
-          type: 'basic',
-          iconUrl: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTEyIDJMMTMuMDkgOC4yNkwyMCA5TDEzLjA5IDE1Ljc0TDEyIDIyTDEwLjkxIDE1Ljc0TDQgOUwxMC45MSA4LjI2TDEyIDJaIiBmaWxsPSIjMDAwIi8+Cjwvc3ZnPg==',
-          title: 'Error while saving to Notion',
-          message: msg.slice(0, 200),
-        })
-      }
+      // Keep silent in UI; surfaced via console for debugging.
+      console.error('Error while saving to Notion:', err)
     }
   }
 })
