@@ -22,6 +22,8 @@ const TEMPLATE_ORDER_KEY = 'notion_template_order'
 const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
+const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
 
 // ============================================================================
 // TYPES
@@ -79,9 +81,11 @@ function setSelectedDatabaseId(id: string | null): Promise<void> {
 function getOAuthConfig(): Promise<{ clientId: string; proxyUrl: string }> {
   return new Promise((resolve) => {
     chrome.storage.sync.get([OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY], (r) => {
+      const storedClientId = String(r[OAUTH_CLIENT_ID_KEY] || '').trim()
+      const storedProxyUrl = String(r[OAUTH_PROXY_URL_KEY] || '').trim()
       resolve({
-        clientId: String(r[OAUTH_CLIENT_ID_KEY] || '').trim(),
-        proxyUrl: String(r[OAUTH_PROXY_URL_KEY] || '').trim(),
+        clientId: storedClientId || DEFAULT_OAUTH_CLIENT_ID,
+        proxyUrl: storedProxyUrl || DEFAULT_OAUTH_PROXY_URL,
       })
     })
   })

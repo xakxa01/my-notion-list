@@ -13,6 +13,8 @@ declare const chrome: {
 const NOTIFICATIONS_KEY = 'notifications_enabled'
 const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
+const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
+const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
 
 type DbOption = { id: string; name: string }
 
@@ -31,8 +33,8 @@ export default function Options() {
       [NOTIFICATIONS_KEY, OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY],
       (r) => {
         setNotificationsEnabled(r[NOTIFICATIONS_KEY] !== false)
-        setOauthClientId(String(r[OAUTH_CLIENT_ID_KEY] || ''))
-        setOauthProxyUrl(String(r[OAUTH_PROXY_URL_KEY] || ''))
+        setOauthClientId(String(r[OAUTH_CLIENT_ID_KEY] || DEFAULT_OAUTH_CLIENT_ID))
+        setOauthProxyUrl(String(r[OAUTH_PROXY_URL_KEY] || DEFAULT_OAUTH_PROXY_URL))
       }
     )
     chrome.runtime.sendMessage({ type: 'GET_OAUTH_REDIRECT_URI' }, (r: unknown) => {
@@ -149,8 +151,11 @@ export default function Options() {
         />
         <label htmlFor="notifications">Mostrar notificación al guardar una página en Notion</label>
       </div>
-      <div className="option-block">
-        <label className="option-label" htmlFor="oauth-client-id">
+      <details className="option-block">
+        <summary className="option-label" style={{ cursor: 'pointer' }}>
+          Configuración avanzada (OAuth)
+        </summary>
+        <label className="option-label" htmlFor="oauth-client-id" style={{ marginTop: 10 }}>
           OAuth Client ID (Notion)
         </label>
         <input
@@ -183,9 +188,9 @@ export default function Options() {
           readOnly
         />
         <p className="option-hint">
-          Copia esta Redirect URI en tu integración Public de Notion y luego usa "Iniciar sesión con Notion" en el popup.
+          Normalmente no necesitas tocar esto. Solo se usa para personalizar OAuth.
         </p>
-      </div>
+      </details>
     </div>
   )
 }
