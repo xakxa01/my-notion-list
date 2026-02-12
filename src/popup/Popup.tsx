@@ -53,10 +53,10 @@ export default function Popup() {
     })
   }, [])
 
-  const loadDatabaseInfo = () => {
+  const loadDatabaseInfo = (forceRefresh = false) => {
     if (token) {
       setLoadingDb(true)
-      chrome.runtime.sendMessage({ type: 'GET_SELECTED_DATABASE_INFO', forceRefresh: true }, (r: unknown) => {
+      chrome.runtime.sendMessage({ type: 'GET_SELECTED_DATABASE_INFO', forceRefresh }, (r: unknown) => {
         setLoadingDb(false)
         const res = r as { database?: DatabaseInfo | null }
         setSelectedDatabase(res.database || null)
@@ -145,12 +145,39 @@ export default function Popup() {
     })
   }
 
+  const handleOpenOptions = () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }, () => {})
+  }
+
   return (
     <div>
       <h1 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <span style={{ fontSize: '24px' }}>💾</span>
         Guardar en Notion
       </h1>
+      <div className="actions-row mb">
+        <button type="button" className="compact-btn" onClick={handleOpenOptions}>
+          Opciones
+        </button>
+        {token && (
+          <>
+            <button
+              type="button"
+              className="compact-btn secondary"
+              onClick={() => {
+                chrome.runtime.sendMessage({ type: 'REFRESH_MENU' }, () => {
+                  setTimeout(() => loadDatabaseInfo(true), 250)
+                })
+              }}
+            >
+              Resincronizar
+            </button>
+            <button type="button" className="compact-btn" onClick={handleDisconnect} disabled={saving}>
+              Cerrar sesión
+            </button>
+          </>
+        )}
+      </div>
       {message && <p className={`status ${token ? 'connected' : 'disconnected'}`}>{message}</p>}
       {!token ? (
         <>
@@ -186,7 +213,7 @@ export default function Popup() {
         <>
           {loadingDb ? (
             <p className="mb" style={{ fontSize: 13, color: '#666' }}>
-              Cargando información del database...
+              Cargando información de la fuente...
             </p>
           ) : selectedDatabase ? (
             <div className="database-section mb">
@@ -290,7 +317,7 @@ export default function Popup() {
                     setSelectedDatabaseId(id || '')
                     chrome.runtime.sendMessage({ type: 'SET_SELECTED_DATABASE_ID', databaseId: id }, () => {
                       // reload selected database info
-                      setTimeout(() => loadDatabaseInfo(), 300)
+                      setTimeout(() => loadDatabaseInfo(true), 300)
                       // refresh db list/count in case needed
                       chrome.runtime.sendMessage({ type: 'GET_DATABASES' }, (r: unknown) => {
                         const raw = (r as { databases?: Array<{ id: string; name?: string }> })?.databases ?? []
@@ -321,23 +348,6 @@ export default function Popup() {
               </div>
             </>
           )}
-          <div className="mb" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button onClick={handleDisconnect} disabled={saving}>
-              Cerrar sesión
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                chrome.runtime.sendMessage({ type: 'REFRESH_MENU' }, () => {
-                  // reload DB info after refresh
-                  setTimeout(() => loadDatabaseInfo(), 500)
-                })
-              }}
-            >
-              Resincronizar
-            </button>
-          </div>
         </>
       )}
       {!token && (
@@ -350,17 +360,6 @@ export default function Popup() {
           ¿Cómo configuro la integración?
         </button>
       )}
-      <div className="footer">
-        <button
-          type="button"
-          className="options-btn"
-          onClick={() => {
-            chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' }, () => {})
-          }}
-        >
-          Abrir opciones
-        </button>
-      </div>
       <IntegrationGuideModal open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   )

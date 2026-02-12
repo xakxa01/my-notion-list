@@ -81,6 +81,19 @@ input[type="text"] {
   font-size: 12px;
 }
 
+.actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.compact-btn {
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
 select {
   width: 100%;
   padding: 8px 10px;
@@ -134,20 +147,6 @@ select:disabled {
 .status.disconnected {
   background: #fff3e0;
   color: #e65100;
-}
-
-.footer {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid #eee;
-}
-
-.options-btn {
-  width: 100%;
-  padding: 12px 16px;
-  font-size: 15px;
-  font-weight: 500;
-  margin-top: 4px;
 }
 
 .guide-link {

@@ -21,9 +21,10 @@ const SELECTED_DB_STORAGE_KEY = 'notion_selected_database_id'
 const TEMPLATE_ORDER_KEY = 'notion_template_order'
 const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+const CACHE_TTL_MS = 20 * 60 * 1000 // 20 minutes
 const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
+const TRUSTED_OAUTH_PROXY_ORIGINS = [new URL(DEFAULT_OAUTH_PROXY_URL).origin, 'http://localhost:3000', 'http://localhost:5173']
 
 // ============================================================================
 // TYPES
@@ -95,17 +96,12 @@ function getOAuthRedirectUri(): string {
   return chrome.identity.getRedirectURL()
 }
 
-async function ensurePermissionForUrl(rawUrl: string): Promise<boolean> {
+function isTrustedOAuthProxyUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl)
-    const originPattern = `${url.origin}/*`
-    const alreadyGranted = await new Promise<boolean>((resolve) => {
-      chrome.permissions.contains({ origins: [originPattern] }, resolve)
-    })
-    if (alreadyGranted) return true
-    return new Promise<boolean>((resolve) => {
-      chrome.permissions.request({ origins: [originPattern] }, (granted) => resolve(Boolean(granted)))
-    })
+    if (!/^https?:$/i.test(url.protocol)) return false
+    if (url.protocol === 'http:' && url.hostname !== 'localhost') return false
+    return TRUSTED_OAUTH_PROXY_ORIGINS.includes(url.origin)
   } catch {
     return false
   }
@@ -115,10 +111,7 @@ async function exchangeOAuthCode(code: string): Promise<void> {
   const { proxyUrl } = await getOAuthConfig()
   const redirectUri = getOAuthRedirectUri()
   if (!proxyUrl) throw new Error('Falta la URL del proxy OAuth en Opciones.')
-  if (!/^https?:\/\//i.test(proxyUrl)) throw new Error('La URL del proxy OAuth debe iniciar con http:// o https://.')
-
-  const permissionOk = await ensurePermissionForUrl(proxyUrl)
-  if (!permissionOk) throw new Error('Permiso de red denegado para el proxy OAuth.')
+  if (!isTrustedOAuthProxyUrl(proxyUrl)) throw new Error('Proxy OAuth no permitido por seguridad.')
 
   const res = await fetch(proxyUrl, {
     method: 'POST',
@@ -129,7 +122,7 @@ async function exchangeOAuthCode(code: string): Promise<void> {
     }),
   })
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
-  if (!res.ok) throw new Error(data.error || `OAuth exchange failed: ${res.status}`)
+  if (!res.ok) throw new Error(data.error || 'No se pudo completar el intercambio OAuth.')
   if (!data.access_token) throw new Error('El proxy OAuth no devolvió access_token.')
   await setToken(data.access_token)
   await refreshContextMenu()
@@ -682,6 +675,15 @@ function parseTemplateFromMenuId(menuItemId: string): string | null {
   return rest || null
 }
 
+function openOptionsInTab(): void {
+  if (chrome.runtime.openOptionsPage) {
+    chrome.runtime.openOptionsPage()
+    return
+  }
+  const optionsUrl = chrome.runtime.getURL('options.html')
+  chrome.tabs.create?.({ url: optionsUrl }, () => {})
+}
+
 // ============================================================================
 // EVENT LISTENERS
 // ============================================================================
@@ -696,7 +698,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'notion-config-options') {
-    chrome.runtime.openOptionsPage?.()
+    openOptionsInTab()
     return
   }
   if (info.menuItemId !== ROOT_MENU_ID && typeof info.menuItemId === 'string' && info.menuItemId.startsWith(MENU_ID_PREFIX)) {
@@ -765,7 +767,10 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     startOAuthSignIn()
       .then(() => sendResponse({ ok: true }))
       .catch((err) => {
-        const errorMessage = err instanceof Error ? err.message : String(err)
+        const raw = err instanceof Error ? err.message : String(err)
+        const errorMessage = /cancelado|canceled|blocked|bloqueado/i.test(raw)
+          ? 'Inicio de sesión cancelado.'
+          : 'No se pudo iniciar sesión con Notion. Revisa la configuración OAuth.'
         sendResponse({ ok: false, error: errorMessage })
       })
     return true
@@ -774,7 +779,10 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     exchangeOAuthCode(msg.code)
       .then(() => sendResponse({ ok: true }))
       .catch((err) => {
-        const errorMessage = err instanceof Error ? err.message : String(err)
+        const raw = err instanceof Error ? err.message : String(err)
+        const errorMessage = /cancelado|canceled|blocked|bloqueado/i.test(raw)
+          ? 'Inicio de sesión cancelado.'
+          : 'No se pudo completar la conexión OAuth.'
         sendResponse({ ok: false, error: errorMessage })
       })
     return true
@@ -784,7 +792,7 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     return true
   }
   if (msg.type === 'OPEN_OPTIONS') {
-    chrome.runtime.openOptionsPage?.()
+    openOptionsInTab()
     sendResponse({ ok: true })
     return true
   }

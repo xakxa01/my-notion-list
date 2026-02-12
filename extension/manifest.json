@@ -7,15 +7,11 @@
     "contextMenus",
     "storage",
     "notifications",
-    "identity",
-    "permissions"
+    "identity"
   ],
   "host_permissions": [
-    "https://api.notion.com/*"
-  ],
-  "optional_host_permissions": [
-    "https://*/*",
-    "http://*/*"
+    "https://api.notion.com/*",
+    "https://my-notion-list.vercel.app/*"
   ],
   "icons": {
     "16": "icon-16.svg",
@@ -33,7 +29,7 @@
   },
   "options_ui": {
     "page": "options.html",
-    "open_in_tab": false
+    "open_in_tab": true
   },
   "background": {
     "service_worker": "background.js",

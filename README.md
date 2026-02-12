@@ -31,7 +31,11 @@ Para usar **"Iniciar sesión con Notion"** (y en la pantalla de Notion usar "Con
 2. En OAuth Domain & URIs, añade como Redirect URI la que devuelve Chrome (en Opciones de la extensión se puede mostrar; es de la forma `https://<id>.chromiumapp.org/`). Obtén tu ID de extensión en `chrome://extensions` y la URL será `https://<extension-id>.chromiumapp.org/`.
 3. Despliega el backend incluido en el repo:
    - La carpeta `api/` contiene una función serverless para Vercel (`api/notion-token.js`).
-   - Despliega en [Vercel](https://vercel.com) y configura las variables de entorno `NOTION_CLIENT_ID` y `NOTION_CLIENT_SECRET` (de tu integración Public).
+   - Despliega en [Vercel](https://vercel.com) y configura las variables de entorno:
+     - `NOTION_CLIENT_ID`
+     - `NOTION_CLIENT_SECRET`
+     - `CHROME_EXTENSION_IDS` (recomendado, IDs separados por coma; ej: `dpjjieemffikjalblibpjlfgodbkjabb`)
+     - `NOTION_ALLOWED_REDIRECT_URIS` (opcional, URIs exactas separadas por coma)
    - La URL será algo como `https://tu-proyecto.vercel.app/api/notion-token`.
 4. En **Opciones** de la extensión, rellena **Client ID (Notion)** con el Client ID de tu integración y **URL del proxy OAuth** con la URL de tu función (ej. `https://tu-proyecto.vercel.app/api/notion-token`).
 5. En el popup, haz clic en **"Iniciar sesión con Notion"**; se abrirá Notion, podrás iniciar sesión (incl. con Google) y autorizar la integración.
