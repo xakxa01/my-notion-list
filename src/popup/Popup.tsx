@@ -250,7 +250,7 @@ export default function Popup() {
               <div className="controls-right">
                 <button
                   type="button"
-                  className="compact-btn"
+                  className="compact-btn compact-icon-btn"
                   onClick={() => setCurrentIndex((i) => (i - 1 + dataSources.length) % dataSources.length)}
                   title="Previous data source"
                   aria-label="Previous data source"
@@ -259,7 +259,7 @@ export default function Popup() {
                 </button>
                 <button
                   type="button"
-                  className="compact-btn"
+                  className="compact-btn compact-icon-btn"
                   onClick={() => setCurrentIndex((i) => (i + 1) % dataSources.length)}
                   title="Next data source"
                   aria-label="Next data source"
