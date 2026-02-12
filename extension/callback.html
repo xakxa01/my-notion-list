@@ -2,7 +2,7 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Conectando con Notion...</title>
+    <title>Connecting to Notion...</title>
     <style>
       body { font-family: system-ui; padding: 24px; text-align: center; }
       .done { color: #2e7d32; }
@@ -10,7 +10,7 @@
     </style>
   </head>
   <body>
-    <p id="msg">Conectando con Notion...</p>
+    <p id="msg">Connecting to Notion...</p>
     <script>
       (function () {
         const params = new URLSearchParams(window.location.search)
@@ -18,27 +18,27 @@
         const error = params.get('error')
         const msg = document.getElementById('msg')
         if (error) {
-          msg.textContent = 'Error de autorización: ' + error
+          msg.textContent = 'Authorization error: ' + error
           msg.className = 'error'
           return
         }
         if (!code) {
-          msg.textContent = 'No se recibió código. Cierra esta pestaña.'
+          msg.textContent = 'No authorization code received. You can close this tab.'
           msg.className = 'error'
           return
         }
         if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
           chrome.runtime.sendMessage({ type: 'OAUTH_CODE', code: code }, function (r) {
             if (r?.ok) {
-              msg.textContent = 'Conectado. Puedes cerrar esta pestaña.'
+              msg.textContent = 'Connected. You can close this tab.'
               msg.className = 'done'
             } else {
-              msg.textContent = r?.error || 'Error al guardar el token.'
+              msg.textContent = r?.error || 'Could not save token.'
               msg.className = 'error'
             }
           })
         } else {
-          msg.textContent = 'Ejecuta esto desde la extensión.'
+          msg.textContent = 'Run this from the extension context.'
           msg.className = 'error'
         }
       })()
