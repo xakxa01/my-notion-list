@@ -23,6 +23,7 @@ const SELECTED_DB_STORAGE_KEY = 'notion_selected_database_id'
 const SELECTED_DB_STORAGE_IDS_KEY = 'notion_selected_database_ids'
 const DATA_SOURCE_ORDER_KEY = 'notion_data_source_order'
 const ACTIVE_DATA_SOURCE_IDS_KEY = 'notion_active_data_source_ids'
+const ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY = 'notion_active_data_source_selection_configured'
 const TEMPLATE_ORDER_KEY = 'notion_template_order'
 const DATA_SOURCES_LIST_CACHE_KEY = 'notion_data_sources_list_cache'
 const AUTH_METHOD_KEY = 'notion_auth_method'
@@ -155,27 +156,47 @@ function getStoredActiveDataSourceIds(): Promise<string[] | null> {
   })
 }
 
-function setActiveDataSourceIds(ids: string[]): Promise<void> {
-  const normalized = normalizeDatabaseIds(ids)
+function getActiveDataSourceSelectionConfigured(): Promise<boolean> {
   return new Promise((resolve) => {
-    chrome.storage.sync.set({ [ACTIVE_DATA_SOURCE_IDS_KEY]: normalized }, () => resolve())
+    chrome.storage.sync.get([ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY], (r) => {
+      resolve(Boolean(r[ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY]))
+    })
+  })
+}
+
+async function setActiveDataSourceIds(ids: string[], configured = false): Promise<void> {
+  const normalized = normalizeDatabaseIds(ids)
+  return new Promise<void>((resolve) => {
+    chrome.storage.sync.set(
+      {
+        [ACTIVE_DATA_SOURCE_IDS_KEY]: normalized,
+        [ACTIVE_DATA_SOURCE_SELECTION_CONFIGURED_KEY]: configured,
+      },
+      () => resolve()
+    )
   })
 }
 
 async function getActiveDataSourceIds(availableIds: string[]): Promise<string[]> {
   const normalizedAvailable = normalizeDatabaseIds(availableIds)
   const stored = await getStoredActiveDataSourceIds()
+  const configured = await getActiveDataSourceSelectionConfigured()
 
-  // First run: default to all accessible data sources.
+  // Default behavior: all accessible data sources are active until user customizes selection.
+  if (!configured) {
+    await setActiveDataSourceIds(normalizedAvailable, false)
+    return normalizedAvailable
+  }
+
   if (stored === null) {
-    await setActiveDataSourceIds(normalizedAvailable)
+    await setActiveDataSourceIds(normalizedAvailable, true)
     return normalizedAvailable
   }
 
   const availableSet = new Set(normalizedAvailable)
   const active = stored.filter((id) => availableSet.has(id))
   if (JSON.stringify(active) !== JSON.stringify(stored)) {
-    await setActiveDataSourceIds(active)
+    await setActiveDataSourceIds(active, true)
   }
   return active
 }
@@ -1072,7 +1093,7 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     getToken()
       .then((token) => {
         if (!token) {
-          return setActiveDataSourceIds(requestedIds).then(() => sendResponse({ ok: true }))
+          return setActiveDataSourceIds(requestedIds, true).then(() => sendResponse({ ok: true }))
         }
         return searchDataSources(token).then(async (dbs) => {
           const allIds = normalizeDatabaseIds(dbs.map((db) => db.id))
@@ -1082,7 +1103,7 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
           const nextActiveSet = new Set(nextActive)
           const disabled = prevActive.filter((id) => !nextActiveSet.has(id))
 
-          await setActiveDataSourceIds(nextActive)
+          await setActiveDataSourceIds(nextActive, true)
           await clearSelectedDbCaches(disabled)
           await refreshContextMenu()
           sendResponse({ ok: true, activeIds: nextActive })
