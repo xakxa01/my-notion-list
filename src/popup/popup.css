@@ -327,6 +327,11 @@ select:disabled {
   margin-bottom: 6px;
 }
 
+.loading-row {
+  width: 100%;
+  text-align: center;
+}
+
 .status {
   padding: 8px 10px;
   border-radius: 6px;

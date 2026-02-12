@@ -343,7 +343,7 @@ export default function Popup() {
           </div>
         </div>
       ) : loadingSources ? (
-        <p className="mb" style={{ fontSize: 13, color: '#666' }}>
+        <p className="mb loading-row" style={{ fontSize: 13, color: '#666' }}>
           Loading data sources...
         </p>
       ) : dataSources.length === 0 ? (
