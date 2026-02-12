@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { IconChevronLeft, IconChevronRight, IconEye, IconEyeOff, IconLogout, IconRefresh, IconSettings } from '@tabler/icons-react'
+import appLogo from '../assets/app-logo.svg'
 import notionLogo from '../assets/notion-logo.svg'
 
 declare const chrome: {
@@ -214,7 +215,7 @@ export default function Popup() {
       <div className="top-shell mb">
         <div className="title-row">
           <h1 className="app-title">
-            <span style={{ fontSize: 24 }}>💾</span>
+            <img src={appLogo} alt="" className="app-logo" />
             My Notion List
           </h1>
           {token && (
