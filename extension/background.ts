@@ -19,12 +19,12 @@ import {
   ROOT_MENU_ID,
   SELECTED_DB_CACHE_KEY_PREFIX,
   TEMPLATE_ORDER_KEY,
-  TRUSTED_OAUTH_PROXY_ORIGINS,
 } from './background/shared/constants'
 import { normalizeDatabaseIds, sortIdsByOrder } from './background/shared/ids'
 import { truncateLabel, getTemplateMenuTitle } from './background/shared/menu'
 import { getTitleFromResult, parseNotionIcon } from './background/shared/notion-parsers'
 import type { CachedSelectedDb, NotionIcon } from './background/shared/types'
+import { startOAuthSignInFlow } from './background/features/oauth'
 /**
  * Service Worker: Handles OAuth, Notion API communication, context menu management,
  * and page creation for the browser extension.
@@ -185,80 +185,6 @@ function getOAuthConfig(): Promise<{ clientId: string; proxyUrl: string }> {
 
 function getOAuthRedirectUri(): string {
   return chrome.identity.getRedirectURL()
-}
-
-function isTrustedOAuthProxyUrl(rawUrl: string): boolean {
-  try {
-    const url = new URL(rawUrl)
-    if (!/^https?:$/i.test(url.protocol)) return false
-    if (url.protocol === 'http:' && url.hostname !== 'localhost') return false
-    return TRUSTED_OAUTH_PROXY_ORIGINS.includes(url.origin)
-  } catch {
-    return false
-  }
-}
-
-async function exchangeOAuthCode(code: string): Promise<void> {
-  const { proxyUrl } = await getOAuthConfig()
-  const redirectUri = getOAuthRedirectUri()
-  if (!proxyUrl) throw new Error('OAuth proxy URL is missing in Settings.')
-  if (!isTrustedOAuthProxyUrl(proxyUrl)) throw new Error('OAuth proxy is not allowed.')
-
-  const res = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      redirect_uri: redirectUri,
-    }),
-  })
-  const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
-  if (!res.ok) throw new Error(data.error || 'OAuth exchange failed.')
-  if (!data.access_token) throw new Error('OAuth proxy did not return access_token.')
-  await setToken(data.access_token)
-  await setAuthMethod('oauth')
-  await refreshContextMenu()
-}
-
-async function startOAuthSignIn(): Promise<void> {
-  const { clientId } = await getOAuthConfig()
-  if (!clientId) throw new Error('Notion Client ID is missing in Settings.')
-
-  const redirectUri = getOAuthRedirectUri()
-  const state = Math.random().toString(36).slice(2)
-  const authUrl = new URL('https://api.notion.com/v1/oauth/authorize')
-  authUrl.searchParams.set('owner', 'user')
-  authUrl.searchParams.set('client_id', clientId)
-  authUrl.searchParams.set('redirect_uri', redirectUri)
-  authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('state', state)
-
-  const responseUrl = await new Promise<string>((resolve, reject) => {
-    chrome.identity.launchWebAuthFlow(
-      { url: authUrl.toString(), interactive: true },
-      (url) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message || 'OAuth was canceled or blocked.'))
-          return
-        }
-        if (!url) {
-          reject(new Error('No OAuth callback URL was received.'))
-          return
-        }
-        resolve(url)
-      }
-    )
-  })
-
-  const parsed = new URL(responseUrl)
-  const returnedState = parsed.searchParams.get('state')
-  if (!returnedState || returnedState !== state) throw new Error('Invalid OAuth state.')
-  const oauthError = parsed.searchParams.get('error')
-  if (oauthError) throw new Error(`Notion OAuth error: ${oauthError}`)
-  const code = parsed.searchParams.get('code')
-  if (!code) throw new Error('No authorization code was received.')
-
-  await exchangeOAuthCode(code)
 }
 
 // ============================================================================
@@ -868,7 +794,13 @@ chrome.runtime.onMessage.addListener((msg: { type: string; token?: string; code?
     return true
   }
   if (msg.type === 'START_OAUTH') {
-    startOAuthSignIn()
+    startOAuthSignInFlow({
+      getOAuthConfig,
+      getOAuthRedirectUri,
+      setToken,
+      setAuthMethod,
+      refreshContextMenu,
+    })
       .then(() => sendResponse({ ok: true }))
       .catch((err) => {
         const raw = err instanceof Error ? err.message : String(err)
