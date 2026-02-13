@@ -8,6 +8,9 @@ const ext = path.join(__dirname, '..', 'extension')
 
 if (!fs.existsSync(dist)) fs.mkdirSync(dist, { recursive: true })
 fs.copyFileSync(path.join(ext, 'manifest.json'), path.join(dist, 'manifest.json'))
-fs.copyFileSync(path.join(ext, 'icon-16.png'), path.join(dist, 'icon-16.png'))
-fs.copyFileSync(path.join(ext, 'icon-32.png'), path.join(dist, 'icon-32.png'))
-fs.copyFileSync(path.join(ext, 'icon-48.png'), path.join(dist, 'icon-48.png'))
+const iconsSrc = path.join(ext, 'icons')
+const iconsDist = path.join(dist, 'icons')
+if (!fs.existsSync(iconsDist)) fs.mkdirSync(iconsDist, { recursive: true })
+for (const file of fs.readdirSync(iconsSrc)) {
+  fs.copyFileSync(path.join(iconsSrc, file), path.join(iconsDist, file))
+}
