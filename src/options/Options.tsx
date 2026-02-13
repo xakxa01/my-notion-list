@@ -4,8 +4,12 @@ declare const chrome: {
   runtime: { sendMessage: (msg: unknown, cb: (r: unknown) => void) => void }
   storage: {
     onChanged?: {
-      addListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
-      removeListener: (listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void) => void
+      addListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
+      removeListener: (
+        listener: (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => void
+      ) => void
     }
     sync: {
       get: (keys: string[], cb: (r: Record<string, unknown>) => void) => void
@@ -18,9 +22,32 @@ const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
+const TRUSTED_OAUTH_PROXY_URLS = [
+  DEFAULT_OAUTH_PROXY_URL,
+  'http://localhost:3000/api/notion-token',
+  'http://localhost:5173/api/notion-token',
+]
 
 type DbOption = { id: string; name: string }
 type AuthMethod = 'token' | 'oauth' | ''
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+}
+
+function normalizeUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim())
+    if (!/^https?:$/i.test(url.protocol)) return null
+    if (url.protocol === 'http:' && url.hostname !== 'localhost') return null
+    url.search = ''
+    url.hash = ''
+    if (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1)
+    return url.toString()
+  } catch {
+    return null
+  }
+}
 
 export default function Options() {
   const [databases, setDatabases] = useState<DbOption[]>([])
@@ -34,6 +61,7 @@ export default function Options() {
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
+  const [oauthConfigMessage, setOauthConfigMessage] = useState<string | null>(null)
 
   const loadDataSources = () => {
     setLoadingDbs(true)
@@ -42,11 +70,16 @@ export default function Options() {
       setLoadingDbs(false)
       const raw = (r as { databases?: DbOption[] })?.databases ?? []
       const list = Array.from(new Map(raw.map((db) => [db.id, db])).values())
-      const rawActive = (r as { activeIds?: string[] })?.activeIds ?? []
-      const activeSet = new Set(rawActive.length > 0 ? rawActive : list.map((db) => db.id))
+      const hasExplicitActiveIds = Array.isArray((r as { activeIds?: unknown }).activeIds)
+      const rawActive = hasExplicitActiveIds
+        ? ((r as { activeIds?: string[] }).activeIds ?? [])
+        : list.map((db) => db.id)
+      const activeSet = new Set(rawActive)
       setDatabases(list)
       setActiveIds(list.map((db) => db.id).filter((id) => activeSet.has(id)))
-      setDbLoadMessage(list.length === 0 ? 'No accessible data sources were found for this account/token.' : null)
+      setDbLoadMessage(
+        list.length === 0 ? 'No accessible data sources were found for this account/token.' : null
+      )
     })
   }
 
@@ -66,7 +99,10 @@ export default function Options() {
     })
     loadDataSources()
 
-    const handleStorageChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string) => {
+    const handleStorageChanged = (
+      changes: Record<string, chrome.storage.StorageChange>,
+      areaName: string
+    ) => {
       if (areaName !== 'local') return
       if (changes['notion_token']) {
         const nextValue = changes['notion_token'].newValue
@@ -76,7 +112,9 @@ export default function Options() {
       }
       if (changes['notion_auth_method']) {
         const nextMethod = String(changes['notion_auth_method'].newValue || '')
-        setAuthMethod(nextMethod === 'token' || nextMethod === 'oauth' ? (nextMethod as AuthMethod) : '')
+        setAuthMethod(
+          nextMethod === 'token' || nextMethod === 'oauth' ? (nextMethod as AuthMethod) : ''
+        )
       }
     }
     chrome.storage.onChanged?.addListener(handleStorageChanged)
@@ -86,13 +124,34 @@ export default function Options() {
   const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setOauthClientId(value)
-    chrome.storage.sync.set({ [OAUTH_CLIENT_ID_KEY]: value.trim() })
+    const normalized = value.trim()
+    if (!isValidUuid(normalized)) {
+      setOauthConfigMessage('OAuth Client ID must be a valid UUID.')
+      return
+    }
+    setOauthConfigMessage(null)
+    chrome.storage.sync.set({ [OAUTH_CLIENT_ID_KEY]: normalized })
   }
 
   const handleOAuthProxyUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setOauthProxyUrl(value)
-    chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: value.trim() })
+    const normalized = normalizeUrl(value)
+    if (!normalized) {
+      setOauthConfigMessage('OAuth proxy URL is invalid.')
+      return
+    }
+    const trusted = new Set(
+      TRUSTED_OAUTH_PROXY_URLS.map((url) => normalizeUrl(url)).filter(
+        (url): url is string => Boolean(url)
+      )
+    )
+    if (!trusted.has(normalized)) {
+      setOauthConfigMessage('OAuth proxy URL must be an approved endpoint.')
+      return
+    }
+    setOauthConfigMessage(null)
+    chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: normalized })
   }
 
   const handleToggleDataSource = (id: string, checked: boolean) => {
@@ -123,49 +182,63 @@ export default function Options() {
   }
 
   return (
-    <div>
-      <h1>Settings - My Notion List</h1>
+    <div className="options-shell">
+      <h1 className="options-title">Settings - My Notion List</h1>
 
-      <div className="option-block">
-        <label className="option-label">Data source access</label>
-        <p className="option-hint">
+      <div className="options-section">
+        <label className="options-label">Data source access</label>
+        <p className="options-help">
           Enable or disable which accessible data sources should be used in the extension.
         </p>
-        <div className="data-source-card">
-          <div className="data-source-header">
-            <span className="data-source-title">Detected data sources</span>
-            <span className="data-source-count">{databases.length}</span>
+
+        <div className="options-card">
+          <div className="options-card-head">
+            <span className="options-card-title">Detected data sources</span>
+            <span className="options-count">{databases.length}</span>
           </div>
-          <div className="data-source-actions">
-            <button type="button" className="refresh-btn" onClick={loadDataSources} disabled={loadingDbs || savingAccess}>
+
+          <div className="options-actions">
+            <button
+              type="button"
+              className="options-btn"
+              onClick={loadDataSources}
+              disabled={loadingDbs || savingAccess}
+            >
               {loadingDbs ? 'Refreshing...' : 'Refresh accessible list'}
             </button>
             <button
               type="button"
-              className="refresh-btn"
+              className="options-btn"
               onClick={handleReconnectNotionAccess}
               disabled={loadingDbs || savingAccess || reconnectLoading || authMethod === 'token'}
-              title={authMethod === 'token' ? 'Available only when signed in with Notion OAuth.' : undefined}
+              title={
+                authMethod === 'token'
+                  ? 'Available only when signed in with Notion OAuth.'
+                  : undefined
+              }
             >
               {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
             </button>
-            {savingAccess && <span className="option-hint">Saving...</span>}
+            {savingAccess && <span className="options-inline-note">Saving...</span>}
           </div>
+
           {(loadingDbs || dbLoadMessage || reconnectMessage) && (
-            <p className="option-hint data-source-message">
+            <p className="options-note">
               {loadingDbs ? 'Checking access...' : reconnectMessage || dbLoadMessage}
             </p>
           )}
+
           {databases.length > 0 && (
-            <ul className="data-source-list">
+            <ul className="options-list">
               {databases.map((db) => (
-                <li key={db.id} className="data-source-item">
-                  <label className="data-source-item-label">
+                <li key={db.id} className="options-list-item">
+                  <label className="options-list-label">
                     <input
                       type="checkbox"
                       checked={activeIds.includes(db.id)}
                       onChange={(e) => handleToggleDataSource(db.id, e.target.checked)}
                       disabled={savingAccess}
+                      className="options-checkbox"
                     />
                     <span>{db.name}</span>
                   </label>
@@ -176,36 +249,52 @@ export default function Options() {
         </div>
       </div>
 
-      <details className="option-block">
-        <summary className="option-label" style={{ cursor: 'pointer' }}>
-          Advanced configuration (OAuth)
-        </summary>
-        <label className="option-label" htmlFor="oauth-client-id" style={{ marginTop: 10 }}>
+      <details className="options-details">
+        <summary className="options-summary">Advanced configuration (OAuth)</summary>
+
+        <label className="options-field-label" htmlFor="oauth-client-id">
           OAuth Client ID (Notion)
         </label>
         <input
           id="oauth-client-id"
-          className="option-input"
+          className="options-input"
           type="text"
           value={oauthClientId}
           onChange={handleOAuthClientIdChange}
           placeholder="Example: 01234567-89ab-cdef-0123-456789abcdef"
+          autoCorrect="off"
+          autoCapitalize="off"
+          autoComplete="off"
+          spellCheck={false}
         />
-        <label className="option-label" htmlFor="oauth-proxy-url" style={{ marginTop: 10 }}>
+
+        <label className="options-field-label" htmlFor="oauth-proxy-url">
           OAuth proxy URL
         </label>
         <input
           id="oauth-proxy-url"
-          className="option-input"
+          className="options-input"
           type="url"
           value={oauthProxyUrl}
           onChange={handleOAuthProxyUrlChange}
           placeholder="https://your-project.vercel.app/api/notion-token"
+          autoCorrect="off"
+          autoCapitalize="off"
+          autoComplete="off"
+          spellCheck={false}
         />
-        <label className="option-label" htmlFor="oauth-redirect-uri" style={{ marginTop: 10 }}>
+
+        <label className="options-field-label" htmlFor="oauth-redirect-uri">
           Redirect URI for Notion
         </label>
-        <input id="oauth-redirect-uri" className="option-input" type="text" value={oauthRedirectUri} readOnly />
+        <input
+          id="oauth-redirect-uri"
+          className="options-input"
+          type="text"
+          value={oauthRedirectUri}
+          readOnly
+        />
+        {oauthConfigMessage && <p className="options-note">{oauthConfigMessage}</p>}
       </details>
     </div>
   )

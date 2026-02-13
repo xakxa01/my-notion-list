@@ -57,6 +57,16 @@ My Notion List lets you save selected text from any page into Notion using your 
 - OAuth Client ID
 - OAuth proxy URL
 - Redirect URI (read-only)
+- Client ID must be a valid UUID.
+- OAuth proxy URL must match an approved endpoint.
+
+## Security Notes
+
+- Internal token input is never auto-filled from stored credentials in the popup.
+- OAuth sign-in uses cryptographically strong `state` validation.
+- OAuth proxy URL is restricted to a trusted allowlist.
+- Token/cache data is cleared when account token changes or signs out.
+- OAuth token exchange endpoint uses strict redirect URI allowlist validation.
 
 ## OAuth Proxy (Vercel)
 
@@ -66,8 +76,8 @@ Set these environment variables in your deployment:
 
 - `NOTION_CLIENT_ID`
 - `NOTION_CLIENT_SECRET`
-- `CHROME_EXTENSION_IDS` (recommended, comma-separated)
-- `NOTION_ALLOWED_REDIRECT_URIS` (optional, comma-separated)
+- `CHROME_EXTENSION_IDS` (comma-separated extension IDs) or `NOTION_ALLOWED_REDIRECT_URIS` (comma-separated exact redirect URIs)
+  - At least one allowlist source is required.
 
 Example endpoint:
 
@@ -83,5 +93,4 @@ Example endpoint:
 - `contextMenus`: context menu actions for selected text.
 - `storage`: token, ordering, and settings.
 - `identity`: OAuth flow.
-- `notifications`: save status notifications.
 - Host permissions for Notion API and OAuth proxy.
