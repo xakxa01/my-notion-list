@@ -23,4 +23,8 @@ export const DATA_SOURCES_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively 
 
 export const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 export const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
-export const TRUSTED_OAUTH_PROXY_ORIGINS = [new URL(DEFAULT_OAUTH_PROXY_URL).origin, 'http://localhost:3000', 'http://localhost:5173']
+export const TRUSTED_OAUTH_PROXY_URLS = [
+  DEFAULT_OAUTH_PROXY_URL,
+  'http://localhost:3000/api/notion-token',
+  'http://localhost:5173/api/notion-token',
+]

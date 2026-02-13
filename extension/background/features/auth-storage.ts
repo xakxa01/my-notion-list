@@ -12,17 +12,22 @@ const TOKEN_KEY = 'notion_token'
 export function getToken(): Promise<string | null> {
   return new Promise((resolve) => {
     chrome.storage.local.get([TOKEN_KEY], (r) => {
-      resolve((r as { notion_token?: string | null }).notion_token ?? null)
+      const token = String((r as { notion_token?: string | null }).notion_token || '').trim()
+      resolve(token || null)
     })
   })
 }
 
 export function setToken(token: string | null): Promise<void> {
+  const normalized = typeof token === 'string' ? token.trim() : ''
   return new Promise((resolve) => {
-    chrome.storage.local.set(
-      { [TOKEN_KEY]: token ?? '', [DATA_SOURCES_LIST_CACHE_KEY]: '' },
-      resolve
-    )
+    if (!normalized) {
+      chrome.storage.local.remove([TOKEN_KEY], () => {
+        chrome.storage.local.set({ [DATA_SOURCES_LIST_CACHE_KEY]: '' }, resolve)
+      })
+      return
+    }
+    chrome.storage.local.set({ [TOKEN_KEY]: normalized, [DATA_SOURCES_LIST_CACHE_KEY]: '' }, resolve)
   })
 }
 

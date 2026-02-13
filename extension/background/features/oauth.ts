@@ -1,4 +1,4 @@
-import { TRUSTED_OAUTH_PROXY_ORIGINS } from '../shared/constants'
+import { TRUSTED_OAUTH_PROXY_URLS } from '../shared/constants'
 
 type OAuthConfig = { clientId: string; proxyUrl: string }
 
@@ -10,15 +10,36 @@ type OAuthDeps = {
   refreshContextMenu: () => Promise<void>
 }
 
-function isTrustedOAuthProxyUrl(rawUrl: string): boolean {
+function normalizeProxyUrl(rawUrl: string): string | null {
   try {
     const url = new URL(rawUrl)
-    if (!/^https?:$/i.test(url.protocol)) return false
-    if (url.protocol === 'http:' && url.hostname !== 'localhost') return false
-    return TRUSTED_OAUTH_PROXY_ORIGINS.includes(url.origin)
+    if (!/^https?:$/i.test(url.protocol)) return null
+    if (url.protocol === 'http:' && url.hostname !== 'localhost') return null
+    url.search = ''
+    url.hash = ''
+    if (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1)
+    return url.toString()
   } catch {
-    return false
+    return null
   }
+}
+
+function isTrustedOAuthProxyUrl(rawUrl: string): boolean {
+  const normalized = normalizeProxyUrl(rawUrl)
+  if (!normalized) return false
+
+  const trusted = new Set(
+    TRUSTED_OAUTH_PROXY_URLS.map((url) => normalizeProxyUrl(url)).filter(
+      (url): url is string => Boolean(url)
+    )
+  )
+  return trusted.has(normalized)
+}
+
+function generateSecureState(): string {
+  const bytes = new Uint8Array(24)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
 async function exchangeOAuthCode(code: string, deps: OAuthDeps): Promise<void> {
@@ -27,14 +48,26 @@ async function exchangeOAuthCode(code: string, deps: OAuthDeps): Promise<void> {
   if (!proxyUrl) throw new Error('OAuth proxy URL is missing in Settings.')
   if (!isTrustedOAuthProxyUrl(proxyUrl)) throw new Error('OAuth proxy is not allowed.')
 
-  const res = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code,
-      redirect_uri: redirectUri,
-    }),
-  })
+  const normalizedProxyUrl = normalizeProxyUrl(proxyUrl)
+  if (!normalizedProxyUrl) throw new Error('OAuth proxy URL is invalid.')
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12_000)
+
+  let res: Response
+  try {
+    res = await fetch(normalizedProxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        code,
+        redirect_uri: redirectUri,
+      }),
+    })
+  } finally {
+    clearTimeout(timeout)
+  }
 
   const data = (await res.json().catch(() => ({}))) as { access_token?: string; error?: string }
 
@@ -51,7 +84,7 @@ export async function startOAuthSignInFlow(deps: OAuthDeps): Promise<void> {
   if (!clientId) throw new Error('Notion Client ID is missing in Settings.')
 
   const redirectUri = deps.getOAuthRedirectUri()
-  const state = Math.random().toString(36).slice(2)
+  const state = generateSecureState()
   const authUrl = new URL('https://api.notion.com/v1/oauth/authorize')
 
   authUrl.searchParams.set('owner', 'user')

@@ -11,13 +11,13 @@ export default function Popup() {
   const c = usePopupController()
 
   return (
-    <div className="w-[360px] p-3 text-[14px] text-zinc-900">
+    <div className="popup-shell">
       <TopBar state={c.topBar} actions={c.topBarActions} />
 
       {c.message && (
         <p
-          className={`mb-3 rounded-md px-2.5 py-2 text-[13px] ${
-            c.token ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          className={`popup-message ${
+            c.token ? 'popup-message--connected' : 'popup-message--disconnected'
           }`}
         >
           {c.message}
@@ -33,13 +33,18 @@ export default function Popup() {
           }}
         />
       ) : c.loadingSources ? (
-        <p className="mb-3 w-full text-center text-[13px] text-zinc-500">Loading data sources...</p>
+        <div className="loading-panel" aria-live="polite" aria-busy="true">
+          <p className="popup-hint popup-hint--centered">Loading data sources...</p>
+          <div className="loading-skeleton" />
+          <div className="loading-skeleton loading-skeleton--short" />
+          <div className="loading-skeleton loading-skeleton--mid" />
+        </div>
       ) : c.dataSources.length === 0 ? (
-        <p className="mb-3 text-[13px] text-zinc-500">
-          No accessible data sources found for this account/token.
+        <p className="popup-hint">
+          No accessible data sources found for this account/token. Open Settings and refresh access.
         </p>
       ) : (
-        <div className="mb-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+        <div className="popup-card">
           {c.hasMultipleDataSources && c.showDataSourceOrder && (
             <DataSourceOrderPanel state={c.order} actions={c.orderActions} />
           )}

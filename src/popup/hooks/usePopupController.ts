@@ -17,6 +17,10 @@ declare const chrome: {
 
 export type PopupController = ReturnType<typeof usePopupController>
 
+function isLikelyNotionInternalToken(token: string): boolean {
+  return /^(ntn_|secret_)[A-Za-z0-9_-]+$/.test(token)
+}
+
 export function usePopupController() {
   const [token, setTokenState] = useState<string | null>(null)
   const [inputToken, setInputToken] = useState('')
@@ -74,9 +78,6 @@ export function usePopupController() {
     chrome.runtime.sendMessage({ type: 'GET_TOKEN' }, (r: unknown) => {
       const t = (r as { token?: string | null })?.token ?? null
       setTokenState(t)
-      if (t) {
-        setInputToken(t)
-      }
     })
   }, [])
 
@@ -111,8 +112,9 @@ export function usePopupController() {
         chrome.runtime.sendMessage({ type: 'GET_TOKEN' }, (r: unknown) => {
           const t = (r as { token?: string | null })?.token ?? null
           setTokenState(t)
-          if (t) {
-            setInputToken(t)
+          if (!t) {
+            setInputToken('')
+            setShowToken(false)
           }
         })
       }
@@ -132,6 +134,11 @@ export function usePopupController() {
 
   const handleSaveToken = () => {
     const value = inputToken.trim()
+    if (value && !isLikelyNotionInternalToken(value)) {
+      setMessage('Invalid token format. Expected an internal token like ntn_...')
+      return
+    }
+
     setSaving(true)
     setMessage(null)
 
@@ -140,7 +147,9 @@ export function usePopupController() {
       const res = r as { ok?: boolean }
       if (res?.ok) {
         setTokenState(value || null)
-        setMessage(value ? 'Token saved.' : 'Signed out.')
+        setInputToken('')
+        setShowToken(false)
+        setMessage(value ? 'Token connected.' : 'Signed out.')
         setTimeout(() => loadDataSources(true, value || null), 200)
       } else {
         setMessage('Error while saving token.')
@@ -157,6 +166,7 @@ export function usePopupController() {
       if ((r as { ok?: boolean })?.ok) {
         setTokenState(null)
         setInputToken('')
+        setShowToken(false)
         setMessage('Signed out.')
       }
     })
@@ -173,9 +183,8 @@ export function usePopupController() {
         chrome.runtime.sendMessage({ type: 'GET_TOKEN' }, (tokenRes: unknown) => {
           const t = (tokenRes as { token?: string | null })?.token ?? null
           setTokenState(t)
-          if (t) {
-            setInputToken(t)
-          }
+          setInputToken('')
+          setShowToken(false)
           setTimeout(() => loadDataSources(true, t), 200)
         })
       } else {
@@ -243,6 +252,7 @@ export function usePopupController() {
   const hasMultipleDataSources = Boolean(token) && dataSources.length > 1
   const hasSingleDataSource = Boolean(token) && dataSources.length === 1
   const showSyncInTopBar = Boolean(token) && !loadingSources && hasMultipleDataSources
+  const showSourceControls = Boolean(token) && !loadingSources && hasMultipleDataSources
 
   return {
     message,
@@ -259,6 +269,7 @@ export function usePopupController() {
       saving,
       hasMultipleDataSources,
       showSyncInTopBar,
+      showSourceControls,
       syncingNow,
       showDataSourceOrder,
     },

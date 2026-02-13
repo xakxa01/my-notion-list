@@ -80,11 +80,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 chrome.runtime.onMessage.addListener(
   (msg: { type: string; token?: string }, _sender, sendResponse) => {
     if (msg.type === 'SET_TOKEN' && msg.token !== undefined) {
-      const nextToken = msg.token || null
-      Promise.all([setToken(nextToken), setAuthMethod(nextToken ? 'token' : '')]).then(() => {
-        refreshMenus()
-        sendResponse({ ok: true })
-      })
+      const nextToken = typeof msg.token === 'string' ? msg.token.trim() || null : null
+      getToken()
+        .then((currentToken) => {
+          const tokenChanged = currentToken !== nextToken
+          const cacheTask = tokenChanged ? clearNotionCaches() : Promise.resolve()
+          return cacheTask.then(() =>
+            Promise.all([setToken(nextToken), setAuthMethod(nextToken ? 'token' : '')])
+          )
+        })
+        .then(() => refreshMenus())
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }))
       return true
     }
 

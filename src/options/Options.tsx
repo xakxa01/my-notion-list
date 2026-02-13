@@ -22,9 +22,32 @@ const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
 const DEFAULT_OAUTH_CLIENT_ID = '305d872b-594c-805b-bbc6-0037cc398635'
 const DEFAULT_OAUTH_PROXY_URL = 'https://my-notion-list.vercel.app/api/notion-token'
+const TRUSTED_OAUTH_PROXY_URLS = [
+  DEFAULT_OAUTH_PROXY_URL,
+  'http://localhost:3000/api/notion-token',
+  'http://localhost:5173/api/notion-token',
+]
 
 type DbOption = { id: string; name: string }
 type AuthMethod = 'token' | 'oauth' | ''
+
+function isValidUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
+}
+
+function normalizeUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim())
+    if (!/^https?:$/i.test(url.protocol)) return null
+    if (url.protocol === 'http:' && url.hostname !== 'localhost') return null
+    url.search = ''
+    url.hash = ''
+    if (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1)
+    return url.toString()
+  } catch {
+    return null
+  }
+}
 
 export default function Options() {
   const [databases, setDatabases] = useState<DbOption[]>([])
@@ -38,6 +61,7 @@ export default function Options() {
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
+  const [oauthConfigMessage, setOauthConfigMessage] = useState<string | null>(null)
 
   const loadDataSources = () => {
     setLoadingDbs(true)
@@ -100,13 +124,34 @@ export default function Options() {
   const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setOauthClientId(value)
-    chrome.storage.sync.set({ [OAUTH_CLIENT_ID_KEY]: value.trim() })
+    const normalized = value.trim()
+    if (!isValidUuid(normalized)) {
+      setOauthConfigMessage('OAuth Client ID must be a valid UUID.')
+      return
+    }
+    setOauthConfigMessage(null)
+    chrome.storage.sync.set({ [OAUTH_CLIENT_ID_KEY]: normalized })
   }
 
   const handleOAuthProxyUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     setOauthProxyUrl(value)
-    chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: value.trim() })
+    const normalized = normalizeUrl(value)
+    if (!normalized) {
+      setOauthConfigMessage('OAuth proxy URL is invalid.')
+      return
+    }
+    const trusted = new Set(
+      TRUSTED_OAUTH_PROXY_URLS.map((url) => normalizeUrl(url)).filter(
+        (url): url is string => Boolean(url)
+      )
+    )
+    if (!trusted.has(normalized)) {
+      setOauthConfigMessage('OAuth proxy URL must be an approved endpoint.')
+      return
+    }
+    setOauthConfigMessage(null)
+    chrome.storage.sync.set({ [OAUTH_PROXY_URL_KEY]: normalized })
   }
 
   const handleToggleDataSource = (id: string, checked: boolean) => {
@@ -137,27 +182,25 @@ export default function Options() {
   }
 
   return (
-    <div className="min-w-[360px] p-4 font-sans text-[14px] text-zinc-900">
-      <h1 className="mb-4 text-[1.25rem] font-semibold">Settings - My Notion List</h1>
+    <div className="options-shell">
+      <h1 className="options-title">Settings - My Notion List</h1>
 
-      <div className="mb-5">
-        <label className="mb-1.5 block font-medium">Data source access</label>
-        <p className="mt-1 text-xs text-zinc-500">
+      <div className="options-section">
+        <label className="options-label">Data source access</label>
+        <p className="options-help">
           Enable or disable which accessible data sources should be used in the extension.
         </p>
 
-        <div className="mt-2.5 rounded-[10px] border border-zinc-300 bg-white p-2.5">
-          <div className="mb-1.5 flex items-center justify-between">
-            <span className="text-[13px] font-semibold text-zinc-800">Detected data sources</span>
-            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-zinc-300 bg-zinc-50 text-xs text-zinc-700">
-              {databases.length}
-            </span>
+        <div className="options-card">
+          <div className="options-card-head">
+            <span className="options-card-title">Detected data sources</span>
+            <span className="options-count">{databases.length}</span>
           </div>
 
-          <div className="mb-1.5 flex items-center gap-2.5">
+          <div className="options-actions">
             <button
               type="button"
-              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
+              className="options-btn"
               onClick={loadDataSources}
               disabled={loadingDbs || savingAccess}
             >
@@ -165,7 +208,7 @@ export default function Options() {
             </button>
             <button
               type="button"
-              className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70"
+              className="options-btn"
               onClick={handleReconnectNotionAccess}
               disabled={loadingDbs || savingAccess || reconnectLoading || authMethod === 'token'}
               title={
@@ -176,29 +219,26 @@ export default function Options() {
             >
               {reconnectLoading ? 'Opening Notion...' : 'Reconnect Notion access'}
             </button>
-            {savingAccess && <span className="text-xs text-zinc-500">Saving...</span>}
+            {savingAccess && <span className="options-inline-note">Saving...</span>}
           </div>
 
           {(loadingDbs || dbLoadMessage || reconnectMessage) && (
-            <p className="mb-2 text-xs text-zinc-500">
+            <p className="options-note">
               {loadingDbs ? 'Checking access...' : reconnectMessage || dbLoadMessage}
             </p>
           )}
 
           {databases.length > 0 && (
-            <ul className="m-0 flex max-h-[180px] list-none flex-col gap-1.5 overflow-auto p-0">
+            <ul className="options-list">
               {databases.map((db) => (
-                <li
-                  key={db.id}
-                  className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[14px] text-zinc-900"
-                >
-                  <label className="flex cursor-pointer items-center gap-2.5">
+                <li key={db.id} className="options-list-item">
+                  <label className="options-list-label">
                     <input
                       type="checkbox"
                       checked={activeIds.includes(db.id)}
                       onChange={(e) => handleToggleDataSource(db.id, e.target.checked)}
                       disabled={savingAccess}
-                      className="m-0 h-4 w-4 cursor-pointer"
+                      className="options-checkbox"
                     />
                     <span>{db.name}</span>
                   </label>
@@ -209,45 +249,52 @@ export default function Options() {
         </div>
       </div>
 
-      <details className="mb-5">
-        <summary className="mb-1.5 cursor-pointer font-medium">
-          Advanced configuration (OAuth)
-        </summary>
+      <details className="options-details">
+        <summary className="options-summary">Advanced configuration (OAuth)</summary>
 
-        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-client-id">
+        <label className="options-field-label" htmlFor="oauth-client-id">
           OAuth Client ID (Notion)
         </label>
         <input
           id="oauth-client-id"
-          className="mb-1.5 w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
+          className="options-input"
           type="text"
           value={oauthClientId}
           onChange={handleOAuthClientIdChange}
           placeholder="Example: 01234567-89ab-cdef-0123-456789abcdef"
+          autoCorrect="off"
+          autoCapitalize="off"
+          autoComplete="off"
+          spellCheck={false}
         />
 
-        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-proxy-url">
+        <label className="options-field-label" htmlFor="oauth-proxy-url">
           OAuth proxy URL
         </label>
         <input
           id="oauth-proxy-url"
-          className="mb-1.5 w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
+          className="options-input"
           type="url"
           value={oauthProxyUrl}
           onChange={handleOAuthProxyUrlChange}
           placeholder="https://your-project.vercel.app/api/notion-token"
+          autoCorrect="off"
+          autoCapitalize="off"
+          autoComplete="off"
+          spellCheck={false}
         />
 
-        <label className="mb-1.5 mt-2.5 block font-medium" htmlFor="oauth-redirect-uri">
+        <label className="options-field-label" htmlFor="oauth-redirect-uri">
           Redirect URI for Notion
         </label>
         <input
           id="oauth-redirect-uri"
-          className="w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px]"
+          className="options-input"
           type="text"
           value={oauthRedirectUri}
           readOnly
         />
+        {oauthConfigMessage && <p className="options-note">{oauthConfigMessage}</p>}
       </details>
     </div>
   )
