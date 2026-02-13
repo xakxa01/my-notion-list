@@ -1,9 +1,4 @@
 @import 'tailwindcss';
-
-@layer base {
-  body {
-    margin: 0;
-    background: #fff;
-    color: #18181b;
-  }
-}
+@import './styles/base.css';
+@import './styles/popup.css';
+@import './styles/options.css';

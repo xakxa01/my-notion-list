@@ -24,29 +24,23 @@ type TemplatesPanelProps = {
 export function TemplatesPanel({ state, actions }: TemplatesPanelProps) {
   return (
     <>
-      <div className="mb-3 flex items-center gap-2.5">
-        <span className="flex h-7 w-7 items-center justify-center text-2xl leading-none">
+      <div className="templates-header">
+        <span className="ds-icon-wrap">
           {state.currentDataSource?.icon?.type === 'emoji' ? (
             <span>{state.currentDataSource.icon.emoji}</span>
           ) : state.currentDataSource?.icon?.type === 'file' ? (
-            <img
-              src={state.currentDataSource.icon.file.url}
-              alt=""
-              className="h-6 w-6 object-contain"
-            />
+            <img src={state.currentDataSource.icon.file.url} alt="" className="ds-icon-image" />
           ) : (
             <span>📄</span>
           )}
         </span>
 
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate text-[15px] font-semibold text-zinc-900">
-            {state.currentDataSource?.name || 'Untitled'}
-          </span>
+        <div className="ds-title-wrap">
+          <span className="ds-title">{state.currentDataSource?.name || 'Untitled'}</span>
           {state.hasSingleDataSource && (
             <button
               type="button"
-              className="group ml-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-800 transition hover:bg-zinc-50"
+              className="icon-btn sync-icon sync-icon--inline"
               onClick={actions.hardSync}
               title="Sync now"
               aria-label="Sync now"
@@ -54,21 +48,21 @@ export function TemplatesPanel({ state, actions }: TemplatesPanelProps) {
               <IconRefresh
                 size={18}
                 stroke={2}
-                className={
-                  state.syncingNow ? 'animate-spin' : 'motion-safe:group-hover:animate-spin'
-                }
+                className={`sync-icon-glyph ${
+                  state.syncingNow ? 'sync-icon-glyph--spinning' : 'sync-icon-glyph--hover'
+                }`}
               />
             </button>
           )}
         </div>
       </div>
 
-      <div className="mt-3">
-        <ul className="m-0 list-none p-0">
+      <div className="templates-body">
+        <ul className="plain-list">
           {state.sortedTemplates.map((tpl, index) => (
             <li
               key={tpl.id}
-              className="mb-1 flex cursor-grab items-center rounded border border-zinc-200 bg-white px-2 py-1.5 text-[13px] text-zinc-700 last:mb-0 active:cursor-grabbing"
+              className="template-item"
               draggable
               onDragStart={() => actions.dragStart(tpl.id)}
               onDragEnd={actions.dragEnd}
@@ -78,11 +72,11 @@ export function TemplatesPanel({ state, actions }: TemplatesPanelProps) {
               }}
               style={{ opacity: state.draggedTemplate === tpl.id ? 0.5 : 1 }}
             >
-              <span className="mr-2">
+              <span className="template-icon-wrap">
                 {tpl.icon?.type === 'emoji' ? (
                   <span>{tpl.icon.emoji}</span>
                 ) : tpl.icon?.type === 'file' ? (
-                  <img src={tpl.icon.file.url} alt="" className="h-[18px] w-[18px] align-middle" />
+                  <img src={tpl.icon.file.url} alt="" className="template-icon-image" />
                 ) : (
                   <span>📄</span>
                 )}

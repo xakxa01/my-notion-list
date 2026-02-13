@@ -12,6 +12,7 @@ type TopBarState = {
   saving: boolean
   hasMultipleDataSources: boolean
   showSyncInTopBar: boolean
+  showSourceControls: boolean
   syncingNow: boolean
   showDataSourceOrder: boolean
 }
@@ -31,22 +32,19 @@ type TopBarProps = {
 }
 
 export function TopBar({ state, actions }: TopBarProps) {
-  const iconBtnBase =
-    'inline-flex h-10 w-10 items-center justify-center rounded-md border border-zinc-300 bg-white text-zinc-800 transition hover:bg-zinc-50'
-
   return (
-    <div className="mb-3 flex flex-col gap-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="m-0 flex items-center gap-2 whitespace-nowrap text-[1.1rem] font-semibold">
-          <img src={appLogo} alt="" className="h-[22px] w-[22px] shrink-0 object-contain" />
+    <div className="topbar">
+      <div className="topbar-row">
+        <h1 className="topbar-title">
+          <img src={appLogo} alt="" className="topbar-logo" draggable={false} />
           My Notion List
         </h1>
 
         {state.token && (
-          <div className="flex items-center overflow-hidden rounded-[9px] border border-zinc-300 bg-zinc-50">
+          <div className="topbar-actions">
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center border-0 bg-transparent text-zinc-700 transition hover:bg-zinc-100"
+              className="topbar-action-btn"
               onClick={actions.openSettings}
               title="Settings"
               aria-label="Settings"
@@ -55,7 +53,7 @@ export function TopBar({ state, actions }: TopBarProps) {
             </button>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center border-0 border-l border-l-zinc-300 bg-transparent text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-70"
+              className="topbar-action-btn"
               onClick={actions.disconnect}
               disabled={state.saving}
               title="Sign out"
@@ -68,11 +66,11 @@ export function TopBar({ state, actions }: TopBarProps) {
       </div>
 
       {state.token && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="control-row">
           {state.showSyncInTopBar && (
             <button
               type="button"
-              className={`group ${iconBtnBase}`}
+              className="icon-btn sync-icon"
               onClick={actions.hardSync}
               title="Sync now"
               aria-label="Sync now"
@@ -80,18 +78,18 @@ export function TopBar({ state, actions }: TopBarProps) {
               <IconRefresh
                 size={18}
                 stroke={2}
-                className={
-                  state.syncingNow ? 'animate-spin' : 'motion-safe:group-hover:animate-spin'
-                }
+                className={`sync-icon-glyph ${
+                  state.syncingNow ? 'sync-icon-glyph--spinning' : 'sync-icon-glyph--hover'
+                }`}
               />
             </button>
           )}
 
-          {state.hasMultipleDataSources && (
-            <div className="flex items-center gap-2">
+          {state.showSourceControls && (
+            <div className="control-group">
               <button
                 type="button"
-                className={iconBtnBase}
+                className="icon-btn"
                 onClick={actions.prevSource}
                 title="Previous data source"
                 aria-label="Previous data source"
@@ -100,7 +98,7 @@ export function TopBar({ state, actions }: TopBarProps) {
               </button>
               <button
                 type="button"
-                className={iconBtnBase}
+                className="icon-btn"
                 onClick={actions.nextSource}
                 title="Next data source"
                 aria-label="Next data source"
@@ -109,7 +107,7 @@ export function TopBar({ state, actions }: TopBarProps) {
               </button>
               <button
                 type="button"
-                className="inline-flex h-10 items-center rounded-md border border-zinc-300 bg-white px-3 text-[12px] font-medium text-zinc-800 transition hover:bg-zinc-50"
+                className="text-btn"
                 onClick={actions.toggleDataSourceOrder}
                 aria-expanded={state.showDataSourceOrder}
               >

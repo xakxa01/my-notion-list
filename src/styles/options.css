@@ -1,0 +1,96 @@
+@layer components {
+  .options-shell {
+    @apply min-h-screen min-w-[360px] bg-zinc-50 p-4 font-sans text-[14px] text-zinc-900;
+  }
+
+  .options-title {
+    @apply mb-4 text-[1.25rem] font-semibold;
+  }
+
+  .options-section {
+    @apply mb-5;
+  }
+
+  .options-label {
+    @apply mb-1.5 block font-medium;
+  }
+
+  .options-help {
+    @apply mt-1 text-xs text-zinc-500;
+  }
+
+  .options-card {
+    @apply mt-2.5 rounded-[10px] border border-zinc-300 bg-white p-2.5;
+  }
+
+  .options-card-head {
+    @apply mb-1.5 flex items-center justify-between;
+  }
+
+  .options-card-title {
+    @apply text-[13px] font-semibold text-zinc-800;
+  }
+
+  .options-count {
+    @apply inline-flex h-6 min-w-6 items-center justify-center rounded-full border border-zinc-300 bg-zinc-50 text-xs text-zinc-700;
+  }
+
+  .options-actions {
+    @apply mb-1.5 flex items-center gap-2.5;
+  }
+
+  .options-btn {
+    @apply cursor-pointer rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-70;
+  }
+
+  .options-inline-note {
+    @apply text-xs text-zinc-500;
+  }
+
+  .options-note {
+    @apply mb-2 text-xs text-zinc-500;
+  }
+
+  .options-list {
+    @apply m-0 flex max-h-[180px] list-none flex-col gap-1.5 overflow-auto p-0;
+  }
+
+  .options-list-item {
+    @apply rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-2 text-[14px] text-zinc-900;
+  }
+
+  .options-list-label {
+    @apply flex cursor-pointer items-center gap-2.5;
+  }
+
+  .options-checkbox {
+    @apply m-0 h-4 w-4 cursor-pointer;
+  }
+
+  .options-details {
+    @apply mb-5;
+  }
+
+  .options-summary {
+    @apply mb-1.5 cursor-pointer font-medium;
+  }
+
+  .options-field-label {
+    @apply mb-1.5 mt-2.5 block font-medium;
+  }
+
+  .options-input {
+    @apply w-full rounded-md border border-zinc-300 bg-white px-2.5 py-2 text-[14px];
+  }
+
+  .options-input + .options-field-label {
+    @apply mt-2.5;
+  }
+
+  .options-btn:focus-visible,
+  .options-checkbox:focus-visible,
+  .options-summary:focus-visible,
+  .options-input:focus-visible {
+    @apply outline-none ring-2 ring-blue-400 ring-offset-1;
+  }
+}
