@@ -9,5 +9,6 @@ export type DataSourceInfo = {
   id: string
   name: string
   icon: NotionIcon
+  urlPropertyKeys?: string[]
   templates: TemplateInfo[]
 }

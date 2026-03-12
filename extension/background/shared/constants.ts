@@ -17,6 +17,8 @@ export const DATA_SOURCES_LIST_CACHE_KEY = 'notion_data_sources_list_cache'
 export const AUTH_METHOD_KEY = 'notion_auth_method'
 export const OAUTH_CLIENT_ID_KEY = 'notion_oauth_client_id'
 export const OAUTH_PROXY_URL_KEY = 'notion_oauth_proxy_url'
+export const LINK_SAVE_MODE_KEY = 'notion_link_save_mode'
+export const LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX = 'notion_link_default_url_property_'
 
 export const CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates
 export const DATA_SOURCES_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER // effectively no auto-expiration; user refresh controls updates

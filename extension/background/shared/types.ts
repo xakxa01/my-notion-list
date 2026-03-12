@@ -6,5 +6,6 @@ export type CachedSelectedDb = {
   name: string
   icon: NotionIcon
   titlePropertyKey: string
+  urlPropertyKeys: string[]
   templates: Array<{ id: string; name: string; icon?: NotionIcon }>
 }

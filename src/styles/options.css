@@ -87,10 +87,39 @@
     @apply mt-2.5;
   }
 
+  .options-radio-group {
+    @apply flex flex-col gap-2;
+  }
+
+  .options-radio {
+    @apply flex items-center gap-2 text-[13px] text-zinc-800;
+  }
+
+  .options-subsection {
+    @apply mt-3;
+  }
+
+  .options-subtitle {
+    @apply mb-2 text-[12px] font-semibold text-zinc-600;
+  }
+
+  .options-url-row {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .options-url-name {
+    @apply text-[13px] text-zinc-800;
+  }
+
+  .options-select {
+    @apply rounded-md border border-zinc-300 bg-white px-2 py-1 text-[12px];
+  }
+
   .options-btn:focus-visible,
   .options-checkbox:focus-visible,
   .options-summary:focus-visible,
-  .options-input:focus-visible {
+  .options-input:focus-visible,
+  .options-select:focus-visible {
     @apply outline-none ring-2 ring-blue-400 ring-offset-1;
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 declare const chrome: {
   runtime: { sendMessage: (msg: unknown, cb: (r: unknown) => void) => void }
@@ -27,9 +27,12 @@ const TRUSTED_OAUTH_PROXY_URLS = [
   'http://localhost:3000/api/notion-token',
   'http://localhost:5173/api/notion-token',
 ]
+const LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX = 'notion_link_default_url_property_'
 
 type DbOption = { id: string; name: string }
 type AuthMethod = 'token' | 'oauth' | ''
+type LinkSaveMode = 'auto' | 'ask' | 'off'
+type UrlPropertyInfo = { id: string; name: string; urlProperties: string[] }
 
 function isValidUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value.trim())
@@ -51,19 +54,55 @@ function normalizeUrl(raw: string): string | null {
 
 export default function Options() {
   const [databases, setDatabases] = useState<DbOption[]>([])
+  const [urlPropertySources, setUrlPropertySources] = useState<UrlPropertyInfo[]>([])
+  const [urlPropertyDefaults, setUrlPropertyDefaults] = useState<Record<string, string>>({})
   const [activeIds, setActiveIds] = useState<string[]>([])
   const [loadingDbs, setLoadingDbs] = useState(false)
   const [dbLoadMessage, setDbLoadMessage] = useState<string | null>(null)
   const [savingAccess, setSavingAccess] = useState(false)
   const [reconnectLoading, setReconnectLoading] = useState(false)
   const [reconnectMessage, setReconnectMessage] = useState<string | null>(null)
+  const [linkSaveMode, setLinkSaveMode] = useState<LinkSaveMode>('auto')
   const [authMethod, setAuthMethod] = useState<AuthMethod>('')
   const [oauthClientId, setOauthClientId] = useState('')
   const [oauthProxyUrl, setOauthProxyUrl] = useState('')
   const [oauthRedirectUri, setOauthRedirectUri] = useState('')
   const [oauthConfigMessage, setOauthConfigMessage] = useState<string | null>(null)
 
-  const loadDataSources = () => {
+  const loadLinkSettings = useCallback(() => {
+    chrome.runtime.sendMessage({ type: 'GET_LINK_SAVE_SETTINGS' }, (r: unknown) => {
+      const mode = String((r as { mode?: string }).mode || 'auto')
+      setLinkSaveMode(mode === 'ask' || mode === 'off' ? (mode as LinkSaveMode) : 'auto')
+    })
+
+    chrome.runtime.sendMessage({ type: 'GET_DATA_SOURCES_WITH_URL_PROPERTIES' }, (r: unknown) => {
+      const list = ((r as { databases?: UrlPropertyInfo[] }).databases ?? []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        urlProperties: Array.isArray(item.urlProperties) ? item.urlProperties : [],
+      }))
+      setUrlPropertySources(list)
+
+      const storageKeys = list.map(
+        (item) => `${LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX}${item.id}`
+      )
+      if (storageKeys.length === 0) {
+        setUrlPropertyDefaults({})
+        return
+      }
+      chrome.storage.sync.get(storageKeys, (res) => {
+        const defaults: Record<string, string> = {}
+        list.forEach((item) => {
+          const key = `${LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX}${item.id}`
+          const value = String(res[key] || '').trim()
+          if (value) defaults[item.id] = value
+        })
+        setUrlPropertyDefaults(defaults)
+      })
+    })
+  }, [])
+
+  const loadDataSources = useCallback(() => {
     setLoadingDbs(true)
     setDbLoadMessage('Loading Notion data sources...')
     chrome.runtime.sendMessage({ type: 'GET_DATABASES' }, (r: unknown) => {
@@ -80,8 +119,9 @@ export default function Options() {
       setDbLoadMessage(
         list.length === 0 ? 'No accessible data sources were found for this account/token.' : null
       )
+      loadLinkSettings()
     })
-  }
+  }, [loadLinkSettings])
 
   useEffect(() => {
     chrome.storage.sync.get([OAUTH_CLIENT_ID_KEY, OAUTH_PROXY_URL_KEY], (r) => {
@@ -119,7 +159,7 @@ export default function Options() {
     }
     chrome.storage.onChanged?.addListener(handleStorageChanged)
     return () => chrome.storage.onChanged?.removeListener(handleStorageChanged)
-  }, [])
+  }, [loadDataSources])
 
   const handleOAuthClientIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -179,6 +219,19 @@ export default function Options() {
         setReconnectMessage(error || 'Could not update access.')
       }
     })
+  }
+
+  const handleLinkSaveModeChange = (mode: LinkSaveMode) => {
+    setLinkSaveMode(mode)
+    chrome.runtime.sendMessage({ type: 'SET_LINK_SAVE_SETTINGS', mode }, () => {})
+  }
+
+  const handleDefaultUrlPropertyChange = (databaseId: string, propertyKey: string) => {
+    setUrlPropertyDefaults((prev) => ({ ...prev, [databaseId]: propertyKey }))
+    chrome.runtime.sendMessage(
+      { type: 'SET_DEFAULT_URL_PROPERTY', databaseId, propertyKey },
+      () => {}
+    )
   }
 
   return (
@@ -296,6 +349,79 @@ export default function Options() {
         />
         {oauthConfigMessage && <p className="options-note">{oauthConfigMessage}</p>}
       </details>
+
+      <div className="options-section">
+        <label className="options-label">Link saving</label>
+        <p className="options-help">
+          Choose if the extension should add the current page URL to a URL property.
+        </p>
+        <div className="options-card">
+          <div className="options-radio-group">
+            <label className="options-radio">
+              <input
+                type="radio"
+                checked={linkSaveMode === 'auto'}
+                onChange={() => handleLinkSaveModeChange('auto')}
+              />
+              <span>Auto-add the link</span>
+            </label>
+            <label className="options-radio">
+              <input
+                type="radio"
+                checked={linkSaveMode === 'ask'}
+                onChange={() => handleLinkSaveModeChange('ask')}
+              />
+              <span>Ask before adding the link</span>
+            </label>
+            <label className="options-radio">
+              <input
+                type="radio"
+                checked={linkSaveMode === 'off'}
+                onChange={() => handleLinkSaveModeChange('off')}
+              />
+              <span>Do not save the link</span>
+            </label>
+          </div>
+
+          {linkSaveMode !== 'off' && (
+            <div className="options-subsection">
+              <div className="options-subtitle">Default URL property (per data source)</div>
+              {urlPropertySources.filter((item) => item.urlProperties.length > 0).length === 0 ? (
+                <p className="options-note">No URL properties detected yet.</p>
+              ) : (
+                <ul className="options-list">
+                  {urlPropertySources
+                    .filter((item) => item.urlProperties.length > 0)
+                    .map((item) => {
+                      const defaultValue =
+                        urlPropertyDefaults[item.id] || item.urlProperties[0] || ''
+                      return (
+                        <li key={item.id} className="options-list-item">
+                          <div className="options-url-row">
+                            <span className="options-url-name">{item.name}</span>
+                            <select
+                              className="options-select"
+                              value={defaultValue}
+                              onChange={(e) =>
+                                handleDefaultUrlPropertyChange(item.id, e.target.value)
+                              }
+                            >
+                              {item.urlProperties.map((prop) => (
+                                <option key={prop} value={prop}>
+                                  {prop}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </li>
+                      )
+                    })}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

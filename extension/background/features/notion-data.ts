@@ -11,6 +11,7 @@ export {
   clearSelectedDbCaches,
   getAllDatabaseInfos,
   getCachedSelectedDb,
+  getDataSourceUrlPropertyKeys,
   getTemplateOrder,
   setTemplateOrder,
   sortTemplatesByOrder,

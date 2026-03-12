@@ -8,6 +8,7 @@ My Notion List lets you save selected text from any page into Notion using your 
 - Works with:
   - Notion OAuth (`Sign in with Notion`)
   - Internal integration token (`ntn_...`)
+- Optional link capture to a URL property (auto, ask, or off).
 - Multi-data-source support (no hard limit).
 - Data sources loaded automatically from your account/token access.
 - Reorder data sources and templates with drag and drop.
@@ -59,6 +60,12 @@ My Notion List lets you save selected text from any page into Notion using your 
 - Redirect URI (read-only)
 - Client ID must be a valid UUID.
 - OAuth proxy URL must match an approved endpoint.
+
+### Link saving
+
+- Auto-add the current page URL to a URL property.
+- Ask before adding and choose the URL property per save.
+- Disable link saving entirely.
 
 ## Security Notes
 

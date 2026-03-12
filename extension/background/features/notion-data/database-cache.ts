@@ -14,7 +14,13 @@ import type { DatabaseInfo, Template } from './types'
 async function getDatabaseFull(
   token: string,
   databaseId: string
-): Promise<{ dataSourceId: string; name: string; icon: NotionIcon; titlePropertyKey: string }> {
+): Promise<{
+  dataSourceId: string
+  name: string
+  icon: NotionIcon
+  titlePropertyKey: string
+  urlPropertyKeys: string[]
+}> {
   const dataSourceRes = await notionFetch(token, `/v1/data_sources/${databaseId}`, {
     method: 'GET',
   })
@@ -26,10 +32,13 @@ async function getDatabaseFull(
     }
 
     let titlePropertyKey = ''
+    const urlPropertyKeys: string[] = []
     for (const [key, prop] of Object.entries(dataSource.properties ?? {})) {
       if (prop?.type === 'title') {
         titlePropertyKey = key
-        break
+      }
+      if (prop?.type === 'url') {
+        urlPropertyKeys.push(key)
       }
     }
     if (!titlePropertyKey) throw new Error(`No title property in data source ${databaseId}`)
@@ -46,6 +55,7 @@ async function getDatabaseFull(
       name,
       icon: parseNotionIcon(dataSource.icon),
       titlePropertyKey,
+      urlPropertyKeys,
     }
   }
 
@@ -61,10 +71,13 @@ async function getDatabaseFull(
 
   const resolvedDataSourceId = database.data_sources?.find((d) => d.id)?.id || databaseId
   let titlePropertyKey = ''
+  const urlPropertyKeys: string[] = []
   for (const [key, prop] of Object.entries(database.properties ?? {})) {
     if (prop?.type === 'title') {
       titlePropertyKey = key
-      break
+    }
+    if (prop?.type === 'url') {
+      urlPropertyKeys.push(key)
     }
   }
   if (!titlePropertyKey) throw new Error(`No title property in database ${databaseId}`)
@@ -81,6 +94,19 @@ async function getDatabaseFull(
     name,
     icon: parseNotionIcon(database.icon),
     titlePropertyKey,
+    urlPropertyKeys,
+  }
+}
+
+export async function getDataSourceUrlPropertyKeys(
+  token: string,
+  databaseId: string
+): Promise<string[]> {
+  try {
+    const { urlPropertyKeys } = await getDatabaseFull(token, databaseId)
+    return urlPropertyKeys || []
+  } catch {
+    return []
   }
 }
 
@@ -188,7 +214,10 @@ async function fetchAndCacheSelectedDb(
   databaseId: string
 ): Promise<CachedSelectedDb | null> {
   try {
-    const { dataSourceId, name, icon, titlePropertyKey } = await getDatabaseFull(token, databaseId)
+    const { dataSourceId, name, icon, titlePropertyKey, urlPropertyKeys } = await getDatabaseFull(
+      token,
+      databaseId
+    )
     const templates = await listTemplates(token, dataSourceId)
     const uniqueTemplates = Array.from(new Map(templates.map((t) => [t.id, t])).values())
 
@@ -198,6 +227,7 @@ async function fetchAndCacheSelectedDb(
       name,
       icon,
       titlePropertyKey,
+      urlPropertyKeys,
       templates: uniqueTemplates,
     }
 
@@ -269,6 +299,7 @@ export async function getCachedSelectedDb(
           name: parsed.name || 'Untitled',
           icon: parsed.icon || null,
           titlePropertyKey: parsed.titlePropertyKey,
+          urlPropertyKeys: parsed.urlPropertyKeys || [],
           templates: parsed.templates,
         }
       }
@@ -294,6 +325,7 @@ async function getDatabaseInfo(
     id: cached.id,
     name: cached.name,
     icon: cached.icon,
+    urlPropertyKeys: cached.urlPropertyKeys || [],
     templates: cached.templates,
   }
 }

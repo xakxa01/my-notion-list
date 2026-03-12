@@ -17,6 +17,7 @@ export default defineConfig({
       input: {
         popup: path.resolve(__dirname, 'popup.html'),
         options: path.resolve(__dirname, 'options.html'),
+        linkPrompt: path.resolve(__dirname, 'link-prompt.html'),
         background: path.resolve(__dirname, 'extension/background.ts'),
       },
       output: {

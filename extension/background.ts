@@ -15,8 +15,8 @@ import {
   clearNotionCaches,
   clearSelectedDbCaches,
   getActiveDataSourceIds,
-  getAllDatabaseInfos,
   getCachedSelectedDb,
+  getDataSourceUrlPropertyKeys,
   getOrderedDataSourceIds,
   getTemplateOrder,
   notionFetch,
@@ -27,10 +27,17 @@ import {
   sortTemplatesByOrder,
 } from './background/features/notion-data'
 import {
+  createPageWithOptionalUrl,
   handleContextMenuClick,
   handleContextMenuShown,
   refreshContextMenu,
 } from './background/features/context-menu'
+import {
+  LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX,
+  LINK_SAVE_MODE_KEY,
+} from './background/shared/constants'
+
+const PENDING_LINK_SAVE_KEY = 'notion_pending_link_save_request'
 
 function refreshMenus(): Promise<void> {
   return refreshContextMenu({
@@ -39,6 +46,49 @@ function refreshMenus(): Promise<void> {
     getCachedSelectedDb,
     getTemplateOrder,
     sortTemplatesByOrder,
+  })
+}
+
+type PendingLinkSaveRequest = {
+  id: string
+  databaseId: string
+  templateId: string
+  selectionText: string
+  pageUrl: string
+  urlProperties: string[]
+  defaultUrlProperty: string | null
+  createdAt: number
+}
+
+async function openLinkPrompt(request: PendingLinkSaveRequest): Promise<void> {
+  await new Promise<void>((resolve) => {
+    chrome.storage.session.set({ [PENDING_LINK_SAVE_KEY]: request }, () => resolve())
+  })
+
+  await new Promise<void>((resolve) => {
+    chrome.windows.create(
+      {
+        url: chrome.runtime.getURL('link-prompt.html'),
+        type: 'popup',
+        width: 420,
+        height: 520,
+      },
+      () => resolve()
+    )
+  })
+}
+
+async function getPendingLinkRequest(): Promise<PendingLinkSaveRequest | null> {
+  return new Promise((resolve) => {
+    chrome.storage.session.get([PENDING_LINK_SAVE_KEY], (r) => {
+      resolve((r as Record<string, PendingLinkSaveRequest | undefined>)[PENDING_LINK_SAVE_KEY] || null)
+    })
+  })
+}
+
+async function clearPendingLinkRequest(): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.session.remove([PENDING_LINK_SAVE_KEY], () => resolve())
   })
 }
 
@@ -57,6 +107,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
       getCachedSelectedDb,
       notionFetch,
       openOptionsInTab,
+      openLinkPrompt,
     })
   } catch (err) {
     console.error('Error while saving to Notion:', err)
@@ -140,6 +191,125 @@ chrome.runtime.onMessage.addListener(
     if (msg.type === 'OPEN_OPTIONS') {
       openOptionsInTab()
       sendResponse({ ok: true })
+      return true
+    }
+
+    if (msg.type === 'GET_LINK_SAVE_SETTINGS') {
+      chrome.storage.sync.get([LINK_SAVE_MODE_KEY], (r) => {
+        const mode = String(r[LINK_SAVE_MODE_KEY] || 'auto')
+        sendResponse({ mode: mode === 'ask' || mode === 'off' ? mode : 'auto' })
+      })
+      return true
+    }
+
+    if (msg.type === 'SET_LINK_SAVE_SETTINGS' && typeof (msg as { mode?: string }).mode === 'string') {
+      const mode = String((msg as { mode: string }).mode)
+      const next = mode === 'ask' || mode === 'off' ? mode : 'auto'
+      chrome.storage.sync.set({ [LINK_SAVE_MODE_KEY]: next }, () => sendResponse({ ok: true }))
+      return true
+    }
+
+    if (msg.type === 'GET_DATA_SOURCES_WITH_URL_PROPERTIES') {
+      getToken()
+        .then(async (token) => {
+          if (!token) return sendResponse({ databases: [] })
+          const dbs = await searchDataSources(token)
+          const unique = Array.from(new Map(dbs.map((db) => [db.id, db])).values())
+
+          const results: Array<{ id: string; name: string; urlProperties: string[] }> = []
+          const batchSize = 4
+          for (let i = 0; i < unique.length; i += batchSize) {
+            const batch = unique.slice(i, i + batchSize)
+            const batchResults = await Promise.all(
+              batch.map(async (db) => {
+                const urlProperties = await getDataSourceUrlPropertyKeys(token, db.id)
+                return {
+                  id: db.id,
+                  name: db.name,
+                  urlProperties,
+                }
+              })
+            )
+            results.push(...batchResults)
+          }
+          sendResponse({ databases: results })
+        })
+        .catch(() => sendResponse({ databases: [] }))
+      return true
+    }
+
+    if (
+      msg.type === 'SET_DEFAULT_URL_PROPERTY' &&
+      typeof (msg as { databaseId?: string }).databaseId === 'string'
+    ) {
+      const databaseId = String((msg as { databaseId: string }).databaseId)
+      const propertyKey = String((msg as { propertyKey?: string }).propertyKey || '').trim()
+      const storageKey = `${LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX}${databaseId}`
+      chrome.storage.sync.set({ [storageKey]: propertyKey }, () => sendResponse({ ok: true }))
+      return true
+    }
+
+    if (msg.type === 'GET_PENDING_LINK_SAVE_REQUEST') {
+      getPendingLinkRequest().then((request) => sendResponse({ request }))
+      return true
+    }
+
+    if (msg.type === 'CANCEL_LINK_SAVE_REQUEST') {
+      clearPendingLinkRequest().then(() => sendResponse({ ok: true }))
+      return true
+    }
+
+    if (msg.type === 'CONFIRM_LINK_SAVE_REQUEST') {
+      const requestId = String((msg as { requestId?: string }).requestId || '')
+      const propertyKey = String((msg as { propertyKey?: string }).propertyKey || '').trim()
+
+      getPendingLinkRequest()
+        .then(async (request) => {
+          if (!request || request.id !== requestId) {
+            await clearPendingLinkRequest()
+            return sendResponse({ ok: false })
+          }
+
+          const token = await getToken()
+          if (!token) {
+            await clearPendingLinkRequest()
+            return sendResponse({ ok: false })
+          }
+
+          const cached = await getCachedSelectedDb(token, request.databaseId)
+          if (!cached) {
+            await clearPendingLinkRequest()
+            return sendResponse({ ok: false })
+          }
+
+          const selectedProperty =
+            propertyKey && request.urlProperties.includes(propertyKey)
+              ? propertyKey
+              : request.defaultUrlProperty
+
+          await createPageWithOptionalUrl(
+            token,
+            cached.dataSourceId,
+            cached.titlePropertyKey,
+            request.selectionText,
+            request.templateId,
+            selectedProperty && request.pageUrl ? selectedProperty : null,
+            selectedProperty && request.pageUrl ? request.pageUrl : null,
+            { getCachedSelectedDb, notionFetch }
+          )
+
+          if (selectedProperty) {
+            const storageKey = `${LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX}${request.databaseId}`
+            chrome.storage.sync.set({ [storageKey]: selectedProperty }, () => {})
+          }
+
+          await clearPendingLinkRequest()
+          sendResponse({ ok: true })
+        })
+        .catch(async () => {
+          await clearPendingLinkRequest()
+          sendResponse({ ok: false })
+        })
       return true
     }
 

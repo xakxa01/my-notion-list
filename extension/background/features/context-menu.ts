@@ -5,7 +5,28 @@ import {
   ROOT_MENU_ID,
 } from '../shared/constants'
 import { getTemplateMenuTitle, truncateLabel } from '../shared/menu'
+import {
+  LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX,
+  LINK_SAVE_MODE_KEY,
+} from '../shared/constants'
 import type { CachedSelectedDb } from '../shared/types'
+
+type LinkSaveMode = 'auto' | 'ask' | 'off'
+type PendingLinkSaveRequest = {
+  id: string
+  databaseId: string
+  templateId: string
+  selectionText: string
+  pageUrl: string
+  urlProperties: string[]
+  defaultUrlProperty: string | null
+  createdAt: number
+}
+
+function generateRequestId(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}_${Math.random().toString(36).slice(2)}`
+}
 
 function clearContextMenu(): Promise<void> {
   return new Promise((resolve) => {
@@ -133,12 +154,14 @@ type CreatePageDeps = {
   notionFetch: (token: string, path: string, options?: RequestInit) => Promise<Response>
 }
 
-async function createPage(
+export async function createPageWithOptionalUrl(
   token: string,
   dataSourceId: string,
   titlePropertyKey: string,
   titleText: string,
   templateId: string,
+  urlPropertyKey: string | null,
+  urlValue: string | null,
   deps: CreatePageDeps
 ): Promise<void> {
   const body: Record<string, unknown> = {
@@ -149,6 +172,11 @@ async function createPage(
       },
     },
     template: { type: 'template_id', template_id: templateId },
+  }
+
+  if (urlPropertyKey && urlValue) {
+    const properties = body.properties as Record<string, unknown>
+    properties[urlPropertyKey] = { url: urlValue }
   }
 
   const res = await deps.notionFetch(token, '/v1/pages', {
@@ -167,6 +195,36 @@ type ClickDeps = {
   getCachedSelectedDb: (token: string, databaseId: string) => Promise<CachedSelectedDb | null>
   notionFetch: (token: string, path: string, options?: RequestInit) => Promise<Response>
   openOptionsInTab: () => void
+  openLinkPrompt: (request: PendingLinkSaveRequest) => Promise<void>
+}
+
+function getLinkSaveMode(): Promise<LinkSaveMode> {
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([LINK_SAVE_MODE_KEY], (r) => {
+      const raw = String(r[LINK_SAVE_MODE_KEY] || 'auto')
+      resolve(raw === 'ask' || raw === 'off' ? raw : 'auto')
+    })
+  })
+}
+
+function getDefaultUrlProperty(databaseId: string): Promise<string | null> {
+  const key = `${LINK_SAVE_DEFAULT_URL_PROPERTY_KEY_PREFIX}${databaseId}`
+  return new Promise((resolve) => {
+    chrome.storage.sync.get([key], (r) => {
+      const value = String(r[key] || '').trim()
+      resolve(value || null)
+    })
+  })
+}
+
+function resolveAutoUrlProperty(
+  urlProperties: string[],
+  defaultProperty: string | null
+): string | null {
+  if (urlProperties.length === 0) return null
+  if (defaultProperty && urlProperties.includes(defaultProperty)) return defaultProperty
+  if (urlProperties.length === 1) return urlProperties[0]
+  return null
 }
 
 export async function handleContextMenuClick(
@@ -192,12 +250,40 @@ export async function handleContextMenuClick(
   const cached = await deps.getCachedSelectedDb(token, parsedTemplate.databaseId)
   if (!cached) return
 
-  await createPage(
+  const pageUrl = typeof info.pageUrl === 'string' ? info.pageUrl : ''
+  const urlProperties = cached.urlPropertyKeys || []
+  const linkMode = await getLinkSaveMode()
+
+  if (linkMode === 'ask' && pageUrl && urlProperties.length > 0) {
+    const defaultProperty = await getDefaultUrlProperty(parsedTemplate.databaseId)
+    const request: PendingLinkSaveRequest = {
+      id: generateRequestId(),
+      databaseId: parsedTemplate.databaseId,
+      templateId: parsedTemplate.templateId,
+      selectionText,
+      pageUrl,
+      urlProperties,
+      defaultUrlProperty: defaultProperty && urlProperties.includes(defaultProperty)
+        ? defaultProperty
+        : urlProperties[0],
+      createdAt: Date.now(),
+    }
+    await deps.openLinkPrompt(request)
+    return
+  }
+
+  const defaultProperty = await getDefaultUrlProperty(parsedTemplate.databaseId)
+  const autoProperty =
+    linkMode === 'auto' && pageUrl ? resolveAutoUrlProperty(urlProperties, defaultProperty) : null
+
+  await createPageWithOptionalUrl(
     token,
     cached.dataSourceId,
     cached.titlePropertyKey,
     selectionText,
     parsedTemplate.templateId,
+    autoProperty,
+    autoProperty ? pageUrl : null,
     deps
   )
 }
